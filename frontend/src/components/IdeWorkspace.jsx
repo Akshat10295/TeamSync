@@ -3,7 +3,9 @@ import Editor from '@monaco-editor/react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { MonacoBinding } from 'y-monaco';
-import { FileCode2, Save, Users } from 'lucide-react';
+import { FileCode2, Save, Users, Play, Terminal as TerminalIcon } from 'lucide-react';
+import socket from '../lib/socket';
+import Terminal from './Terminal';
 
 export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
   const editorRef = useRef(null);
@@ -13,6 +15,9 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
   const [activeUsers, setActiveUsers] = useState([]);
 
   const [editorInstance, setEditorInstance] = useState(null);
+  const [terminalOutput, setTerminalOutput] = useState('');
+  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
 
   // Initialize Yjs document and WebSocket connection
   useEffect(() => {
@@ -130,13 +135,17 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
 
   // Determine language from file extension
   const getLanguage = (fname) => {
-    const ext = fname.split('.').pop();
+    const ext = fname.split('.').pop().toLowerCase();
     switch (ext) {
       case 'py': return 'python';
       case 'js': return 'javascript';
       case 'jsx': return 'javascript';
       case 'ts': return 'typescript';
       case 'tsx': return 'typescript';
+      case 'cpp': return 'cpp';
+      case 'hpp': return 'cpp';
+      case 'cc': return 'cpp';
+      case 'java': return 'java';
       case 'html': return 'html';
       case 'css': return 'css';
       case 'json': return 'json';
@@ -144,6 +153,53 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
       default: return 'plaintext';
     }
   };
+
+  const handleRunCode = () => {
+    if (!editorInstance || isExecuting) return;
+    
+    const code = editorInstance.getValue();
+    const language = getLanguage(fileName);
+    
+    const allowed = ['python', 'javascript', 'cpp', 'java'];
+    if (!allowed.includes(language)) {
+      alert('Currently supported: Python, JavaScript, C++, and Java.');
+      return;
+    }
+    
+    setIsTerminalOpen(true);
+    setIsExecuting(true);
+    setTerminalOutput(`Starting ${language} execution...\n`);
+    
+    socket.emit('run-code', { 
+      projectId, 
+      fileId, 
+      language, 
+      code 
+    });
+  };
+
+  useEffect(() => {
+    const handleOutput = (data) => {
+      console.log(`[IDE] 📥 Received code-output:`, data);
+      setIsTerminalOpen(true); // Force open
+      setTerminalOutput(prev => prev + data);
+    };
+
+    const handleExit = (code) => {
+      console.log(`[IDE] 🏁 Process exited:`, code);
+      setIsExecuting(false);
+      setTerminalOutput(prev => prev + `\n[Process exited with code ${code}]\n`);
+    };
+
+    socket.on('code-output', handleOutput);
+    socket.on('code-exit', handleExit);
+
+    return () => {
+      socket.off('code-output', handleOutput);
+      socket.off('code-exit', handleExit);
+    };
+  }, []);
+
 
   return (
     <div className="flex flex-col h-full w-full bg-[#1e1e1e] border-l border-zinc-800">
@@ -179,10 +235,12 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
             <span>Auto-saving</span>
           </button>
           <button 
-            onClick={() => alert('Code execution feature (Phase 4) is not yet implemented.')}
-            className="flex items-center space-x-1 px-3 py-1 bg-green-600 hover:bg-green-500 text-white text-xs font-bold rounded shadow transition-colors"
+            onClick={handleRunCode}
+            disabled={isExecuting}
+            className={`flex items-center space-x-1 px-3 py-1 ${isExecuting ? 'bg-zinc-700 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500'} text-white text-xs font-bold rounded shadow transition-colors`}
           >
-            <span>▶ Run Code</span>
+            <Play size={12} fill="currentColor" />
+            <span>{isExecuting ? 'Running...' : 'Run Code'}</span>
           </button>
         </div>
       </div>
@@ -214,6 +272,15 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
           </div>
         )}
       </div>
+
+      {/* Terminal */}
+      <Terminal 
+        isOpen={isTerminalOpen}
+        output={terminalOutput}
+        isExecuting={isExecuting}
+        onClose={() => setIsTerminalOpen(false)}
+        onClear={() => setTerminalOutput('')}
+      />
     </div>
   );
 }

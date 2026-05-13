@@ -103,7 +103,10 @@ export default function IdePage({ session }) {
     try {
       const newFile = await api(`/api/projects/${projectId}/files`, 'POST', { name, type, parentId });
       if (newFile && !newFile.error) {
-        setFiles(prev => [...prev, newFile]);
+        setFiles(prev => {
+          if (prev.find(f => f.id === newFile.id)) return prev;
+          return [...prev, newFile];
+        });
         if (type === 'file') setActiveFile(newFile);
       } else {
         throw new Error(newFile?.error || 'Failed to create');
@@ -121,7 +124,9 @@ export default function IdePage({ session }) {
       const updatedFile = await api(`/api/projects/${projectId}/files/${item.id}`, 'PUT', { name: newName });
       if (updatedFile && !updatedFile.error) {
         setFiles(prev => prev.map(f => f.id === item.id ? updatedFile : f));
-        if (activeFile?.id === item.id) setActiveFile(updatedFile);
+        if (activeFile?.id === item.id) {
+          setActiveFile(current => current?.id === item.id ? updatedFile : current);
+        }
       } else {
         throw new Error(updatedFile?.error || 'Failed to rename');
       }

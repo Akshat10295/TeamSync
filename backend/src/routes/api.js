@@ -11,6 +11,7 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
+const { executeCode } = require('../utils/executionEngine');
 
 // ─── Supabase Client ─────────────────────────────────────────────────────────
 const supabase = createClient(
@@ -1746,6 +1747,29 @@ io.on('connection', (socket) => {
   socket.on('join:project', ({ projectId }) => {
     socket.join(projectId);
     console.log(`[Socket] User joined project room: ${projectId}`);
+  });
+
+  socket.on('run-code', async ({ projectId, language, code }) => {
+    console.log(`[Socket] 🚀 Received run-code for project ${projectId} (${language})`);
+    
+    try {
+      await executeCode(
+        language, 
+        code, 
+        (output) => {
+          console.log(`[Socket] 📤 Sending code-output: ${output.substring(0, 50)}...`);
+          socket.emit('code-output', output);
+        },
+        (exitCode) => {
+          console.log(`[Socket] 🏁 Execution finished with code ${exitCode}`);
+          socket.emit('code-exit', exitCode);
+        }
+      );
+    } catch (err) {
+      console.error(`[Socket] ❌ Execution Error:`, err);
+      socket.emit('code-output', `Execution Error: ${err.message}\r\n`);
+      socket.emit('code-exit', 1);
+    }
   });
 
   socket.on('note:typing', (data) => socket.to(data.teamId).emit('note:typing', data));
