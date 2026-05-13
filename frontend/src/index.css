@@ -1,0 +1,228 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+/* ═══ Dark Theme (default) ═══ */
+:root, [data-theme="dark"] {
+  --bg-primary: #0d0c13;
+  --bg-secondary: #1a1625;
+  --bg-card: rgba(255, 255, 255, 0.03);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.15);
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --input-bg: rgba(255, 255, 255, 0.05);
+  color-scheme: dark;
+}
+
+/* ═══ Light Theme ═══ */
+[data-theme="light"] {
+  --bg-primary: #f8f9fc;
+  --bg-secondary: #ffffff;
+  --bg-card: rgba(0, 0, 0, 0.02);
+  --border: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.15);
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --input-bg: rgba(0, 0, 0, 0.04);
+  color-scheme: light;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  margin: 0;
+  min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ═══ LIGHT MODE: Override all Tailwind text/bg colors ═══ */
+[data-theme="light"] .text-white { color: #1e293b !important; }
+[data-theme="light"] .text-gray-200 { color: #374151 !important; }
+[data-theme="light"] .text-gray-300 { color: #4b5563 !important; }
+[data-theme="light"] .text-gray-400 { color: #6b7280 !important; }
+[data-theme="light"] .text-gray-500 { color: #9ca3af !important; }
+[data-theme="light"] .text-gray-600 { color: #6b7280 !important; }
+
+/* Light mode glass panel */
+[data-theme="light"] .glass-panel {
+  background: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgba(0,0,0,0.08) !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+}
+
+/* Light mode backgrounds */
+[data-theme="light"] .bg-white\/\[0\.03\],
+[data-theme="light"] .bg-white\/\[0\.02\] {
+  background: rgba(0, 0, 0, 0.02) !important;
+}
+[data-theme="light"] .bg-white\/\[0\.06\] {
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+[data-theme="light"] .bg-white\/5 {
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+[data-theme="light"] .bg-white\/10 {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+[data-theme="light"] .hover\:bg-white\/5:hover {
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+[data-theme="light"] .hover\:bg-white\/10:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+[data-theme="light"] .hover\:bg-white\/\[0\.06\]:hover {
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Light mode borders */
+[data-theme="light"] .border-white\/5 {
+  border-color: rgba(0, 0, 0, 0.06) !important;
+}
+[data-theme="light"] .border-white\/10 {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+[data-theme="light"] .border-white\/20 {
+  border-color: rgba(0, 0, 0, 0.12) !important;
+}
+[data-theme="light"] .border-white\/\[0\.03\] {
+  border-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Light mode inputs */
+[data-theme="light"] input,
+[data-theme="light"] textarea,
+[data-theme="light"] select {
+  color: #1e293b !important;
+  background: rgba(0, 0, 0, 0.03) !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
+  color: #9ca3af !important;
+}
+
+/* Light mode specific overrides for active nav */
+[data-theme="light"] .bg-purple-500\/15 {
+  background: rgba(139, 92, 246, 0.1) !important;
+}
+
+/* Light mode dashed borders */
+[data-theme="light"] .border-dashed {
+  border-color: rgba(0, 0, 0, 0.15) !important;
+}
+
+/* ═══ Glass Panel ═══ */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+/* Fix native form elements for both themes */
+select, input[type="date"], input[type="datetime-local"], input[type="time"] {
+  color-scheme: inherit;
+}
+
+[data-theme="dark"] select option {
+  background: #1a1625;
+  color: #e2e8f0;
+}
+
+[data-theme="light"] select option {
+  background: #ffffff;
+  color: #1e293b;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.2);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.4);
+}
+
+/* React Flow overrides */
+.react-flow__node {
+  font-family: 'Inter', sans-serif !important;
+}
+[data-theme="dark"] .react-flow__controls button {
+  background: #1a1625 !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(255,255,255,0.1) !important;
+}
+[data-theme="dark"] .react-flow__controls button:hover {
+  background: #2a2535 !important;
+}
+[data-theme="light"] .react-flow__controls button {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  border-color: rgba(0,0,0,0.1) !important;
+}
+
+/* ═══ Yjs Remote Cursors ═══ */
+.yRemoteSelection {
+  background-color: var(--cursor-color-alpha, rgba(255, 165, 0, 0.2));
+  transition: background-color 0.2s;
+}
+
+.yRemoteSelectionHead {
+  position: absolute;
+  border-left: var(--cursor-color, orange) solid 2px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* The "Initial" Circle */
+.yRemoteSelectionHead::after {
+  position: absolute;
+  content: attr(data-initial);
+  border: 2px solid #1e1e1e;
+  border-radius: 50%;
+  color: white;
+  background-color: var(--cursor-color, orange);
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+  font-weight: 800;
+  top: -22px;
+  left: -10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  pointer-events: auto;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+/* Expand to Full Name on Hover */
+.yRemoteSelectionHead:hover::after {
+  content: attr(data-name);
+  border-radius: 4px;
+  width: auto;
+  padding: 0 8px;
+  height: 22px;
+  font-size: 11px;
+  top: -26px;
+  left: -2px;
+}
