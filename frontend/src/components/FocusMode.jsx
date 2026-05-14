@@ -82,18 +82,37 @@ export default function FocusMode({ task, onClose, onTimer }) {
     const tick = () => {
       if (task.deadline || task.dueDate) {
         const dl = task.deadline || task.dueDate;
-        const ms = new Date(dl) - Date.now();
-        if (ms < 0) { setCountdown('Overdue'); return; }
-        const h = Math.floor(ms / 3600000);
-        const m = Math.floor((ms % 3600000) / 60000);
-        const s = Math.floor((ms % 60000) / 1000);
-        setCountdown(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
+        // Only replace T with space for local strings without TZ info
+        let dateStr = dl;
+        if (typeof dl === 'string' && dl.includes('T') && !dl.includes('Z') && !dl.includes('+')) {
+          dateStr = dl.replace('T', ' ');
+        }
+        const dlTime = new Date(dateStr).getTime();
+        const now = Date.now();
+        const ms = dlTime - now;
+        
+        if (ms <= 0) { 
+          setCountdown('Overdue'); 
+        } else {
+          const d = Math.floor(ms / 86400000);
+          const h = Math.floor((ms % 86400000) / 3600000);
+          const m = Math.floor((ms % 3600000) / 60000);
+          const s = Math.floor((ms % 60000) / 1000);
+          
+          if (d > 0) {
+            setCountdown(`${d}d ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
+          } else {
+            setCountdown(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
+          }
+        }
       } else {
         setCountdown('No deadline');
       }
       // Session elapsed
       if (task.timerRunning && task.timerStart) {
-        setElapsed(Math.floor((Date.now() - task.timerStart) / 1000) + (task.actualTime || 0) * 60);
+        const startMs = typeof task.timerStart === 'string' ? new Date(task.timerStart).getTime() : task.timerStart;
+        const diff = Math.floor((Date.now() - startMs) / 1000);
+        setElapsed(Math.max(0, diff + (task.actualTime || 0) * 60));
       } else {
         setElapsed((task.actualTime || 0) * 60);
       }
@@ -173,20 +192,23 @@ export default function FocusMode({ task, onClose, onTimer }) {
   };
 
   const handleStart = async () => {
+    console.log('[FocusMode] Start button clicked for task:', task.id);
     setIsStarting(true);
     try {
       await onTimer(task.id, 'start');
     } catch (e) {
-      console.error('Timer start error:', e);
+      console.error('[FocusMode] Timer start error:', e);
     }
     setIsStarting(false);
   };
 
   const handlePause = async () => {
+    console.log('[FocusMode] Pause button clicked');
     await onTimer(task.id, 'stop');
   };
 
   const handleComplete = async () => {
+    console.log('[FocusMode] Complete button clicked');
     stopAudio();
     await onTimer(task.id, 'complete');
     onClose();
@@ -197,97 +219,140 @@ export default function FocusMode({ task, onClose, onTimer }) {
   const isRunning = task.timerRunning;
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="min-h-screen w-full flex flex-col items-center justify-center relative overflow-hidden" style={{ background: '#080810' }}>
-      {/* Breathing background */}
+    <motion.div 
+      initial={{ opacity: 0 }} 
+      animate={{ opacity: 1 }} 
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 w-full h-full flex flex-col items-center justify-center overflow-hidden z-[1000]" 
+      style={{ background: '#05050a' }}
+    >
+      {/* Breathing background elements */}
       <motion.div
-        animate={{ scale: [1, 1.15, 1], opacity: [0.2, 0.35, 0.2] }}
-        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-        className="absolute w-[600px] h-[600px] rounded-full blur-[150px]"
-        style={{ background: 'rgba(139, 92, 246, 0.08)' }}
+        animate={{ scale: [1, 1.2, 1], opacity: [0.15, 0.3, 0.15] }}
+        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute w-[800px] h-[800px] rounded-full blur-[180px] pointer-events-none"
+        style={{ background: 'rgba(139, 92, 246, 0.12)', top: '-10%', left: '-10%' }}
       />
       <motion.div
         animate={{ scale: [1, 1.1, 1], opacity: [0.1, 0.2, 0.1] }}
-        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-        className="absolute w-[400px] h-[400px] rounded-full blur-[120px]"
-        style={{ background: 'rgba(59, 130, 246, 0.06)', top: '20%', left: '30%' }}
+        transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+        className="absolute w-[600px] h-[600px] rounded-full blur-[150px] pointer-events-none"
+        style={{ background: 'rgba(59, 130, 246, 0.08)', bottom: '-10%', right: '-10%' }}
       />
 
-      {/* Close */}
-      <button onClick={() => { stopAudio(); onClose(); }}
-        className="absolute top-6 right-6 text-gray-500 hover:text-white transition-all p-2 cursor-pointer z-10">
+      {/* Close Button - Fixed to viewport */}
+      <button 
+        onClick={() => { stopAudio(); onClose(); }}
+        className="absolute top-10 right-10 text-zinc-500 hover:text-white hover:scale-110 transition-all p-3 cursor-pointer z-[1100] bg-white/5 rounded-full backdrop-blur-md border border-white/5"
+      >
         <X className="w-6 h-6" />
       </button>
 
-      {/* Focus label */}
-      <motion.p
-        animate={{ opacity: [0.4, 0.7, 0.4] }}
-        transition={{ duration: 3, repeat: Infinity }}
-        className="text-xs uppercase tracking-[0.3em] font-bold mb-8"
-        style={{ color: 'rgba(139,92,246,0.6)' }}>Focus Mode</motion.p>
+      {/* Main Centered Content */}
+      <div className="relative z-[1050] flex flex-col items-center justify-center max-w-2xl w-full px-6 space-y-16">
+        
+        {/* Header Section */}
+        <div className="text-center space-y-4">
+          <motion.p
+            animate={{ opacity: [0.4, 0.8, 0.4] }}
+            transition={{ duration: 4, repeat: Infinity }}
+            className="text-[10px] uppercase tracking-[0.5em] font-black text-purple-500/60"
+          >
+            Deep Focus Session
+          </motion.p>
+          <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight leading-tight">
+            {task.title}
+          </h1>
+        </div>
 
-      {/* Task title */}
-      <h1 className="text-3xl md:text-4xl font-bold text-center max-w-lg px-4 mb-12" style={{ color: '#e2e8f0' }}>{task.title}</h1>
+        {/* Timer/Deadline Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 w-full max-w-lg">
+          <div className="text-center space-y-3 p-8 rounded-3xl bg-white/[0.02] border border-white/5 backdrop-blur-sm">
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">Deadline</p>
+            <p className={`text-4xl font-mono font-black tracking-tighter ${countdown === 'Overdue' ? 'text-red-500' : 'text-zinc-200'}`}>
+              {countdown}
+            </p>
+          </div>
+          <div className="text-center space-y-3 p-8 rounded-3xl bg-white/[0.02] border border-white/5 backdrop-blur-sm">
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold">Session Time</p>
+            <p className="text-4xl font-mono font-black tracking-tighter text-purple-400">
+              {formatElapsed(elapsed)}
+            </p>
+          </div>
+        </div>
 
-      {/* Countdown */}
-      <div className="mb-8 text-center">
-        <p className="text-xs mb-2 uppercase tracking-widest" style={{ color: '#64748b' }}>Deadline</p>
-        <p className={`text-5xl md:text-6xl font-black font-mono tracking-tight ${countdown === 'Overdue' ? 'text-red-400' : ''}`}
-          style={{ color: countdown === 'Overdue' ? undefined : '#e2e8f0' }}>{countdown}</p>
+        {/* Action Controls */}
+        <div className="flex flex-wrap items-center justify-center gap-6">
+          {isRunning ? (
+            <>
+              <button 
+                onClick={handlePause}
+                className="group flex items-center gap-3 px-8 py-4 rounded-2xl text-sm font-bold transition-all cursor-pointer hover:bg-yellow-500/20 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20"
+              >
+                <Pause className="w-5 h-5 fill-current" /> 
+                <span>Pause Session</span>
+              </button>
+              <button 
+                onClick={handleComplete}
+                className="group flex items-center gap-3 px-10 py-4 rounded-2xl text-white text-sm font-bold shadow-2xl transition-all cursor-pointer hover:scale-105 active:scale-95 shadow-emerald-500/20"
+                style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}
+              >
+                <CheckCircle className="w-5 h-5" /> 
+                <span>Mark Complete</span>
+              </button>
+            </>
+          ) : (
+            <button 
+              onClick={handleStart} 
+              disabled={isStarting}
+              className="group flex items-center gap-4 px-12 py-5 rounded-2xl text-white text-base font-black shadow-2xl transition-all cursor-pointer hover:scale-105 active:scale-95 disabled:opacity-50 shadow-purple-500/25"
+              style={{ background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)' }}
+            >
+              <Play className="w-6 h-6 fill-current" /> 
+              <span>{isStarting ? 'Preparing...' : 'Start Working'}</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Session elapsed */}
-      <div className="mb-12 text-center">
-        <p className="text-xs mb-1 uppercase tracking-widest" style={{ color: '#64748b' }}>Session Time</p>
-        <p className="text-2xl font-mono" style={{ color: '#94a3b8' }}>{formatElapsed(elapsed)}</p>
-      </div>
+      {/* Ambient Sound Controls - Fixed to Bottom */}
+      <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-6 z-[1100]">
+        <div className="flex items-center gap-4 p-2 bg-white/5 backdrop-blur-xl rounded-2xl border border-white/5 shadow-2xl">
+          {SOUNDS.map(s => (
+            <button 
+              key={s.key} 
+              onClick={() => setActiveSound(activeSound === s.key ? null : s.key)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                activeSound === s.key
+                  ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20'
+                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'
+              }`}
+            >
+              <s.icon className="w-4 h-4" /> 
+              {s.label}
+            </button>
+          ))}
+          
+          <div className="w-px h-6 bg-white/10 mx-1" />
 
-      {/* Controls */}
-      <div className="flex items-center gap-4">
-        {isRunning ? (
-          <>
-            <button onClick={handlePause}
-              className="flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-medium transition-all cursor-pointer hover:scale-105"
-              style={{ background: 'rgba(234,179,8,0.15)', color: '#facc15' }}>
-              <Pause className="w-5 h-5" /> Pause
+          <div className="flex items-center gap-4 px-2">
+            <button 
+              onClick={() => setMuted(!muted)} 
+              className="text-zinc-500 hover:text-white transition-colors p-1 cursor-pointer"
+            >
+              {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
             </button>
-            <button onClick={handleComplete}
-              className="flex items-center gap-2 px-8 py-3 rounded-2xl text-white text-sm font-semibold shadow-lg transition-all cursor-pointer hover:scale-105"
-              style={{ background: 'linear-gradient(to right, #16a34a, #059669)', boxShadow: '0 10px 25px rgba(22,163,74,0.15)' }}>
-              <CheckCircle className="w-5 h-5" /> Complete
-            </button>
-          </>
-        ) : (
-          <button onClick={handleStart} disabled={isStarting}
-            className="flex items-center gap-2 px-8 py-3 rounded-2xl text-white text-sm font-semibold shadow-lg transition-all cursor-pointer hover:scale-105 disabled:opacity-50"
-            style={{ background: 'linear-gradient(to right, #9333ea, #3b82f6)', boxShadow: '0 10px 25px rgba(147,51,234,0.15)' }}>
-            <Play className="w-5 h-5" /> {isStarting ? 'Starting...' : 'Start Working'}
-          </button>
-        )}
-      </div>
-
-      {/* Ambient Sound */}
-      <div className="absolute bottom-8 flex items-center gap-3">
-        {SOUNDS.map(s => (
-          <button key={s.key} onClick={() => setActiveSound(activeSound === s.key ? null : s.key)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-all cursor-pointer ${
-              activeSound === s.key
-                ? 'text-purple-400'
-                : 'text-gray-500 hover:text-gray-300'
-            }`}
-            style={{ background: activeSound === s.key ? 'rgba(139,92,246,0.15)' : 'rgba(255,255,255,0.03)' }}>
-            <s.icon className="w-3.5 h-3.5" /> {s.label}
-          </button>
-        ))}
-        {activeSound && (
-          <>
-            <button onClick={() => setMuted(!muted)} className="text-gray-500 hover:text-white transition-all p-1 cursor-pointer">
-              {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-            </button>
-            <input type="range" min="0" max="1" step="0.05" value={volume} onChange={e => setVolume(parseFloat(e.target.value))}
-              className="w-20 accent-purple-500 h-1" />
-          </>
-        )}
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.05" 
+              value={volume} 
+              onChange={e => setVolume(parseFloat(e.target.value))}
+              className="w-24 accent-purple-500 h-1 cursor-pointer opacity-60 hover:opacity-100 transition-opacity" 
+            />
+          </div>
+        </div>
       </div>
     </motion.div>
   );

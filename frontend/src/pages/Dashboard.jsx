@@ -74,16 +74,26 @@ export default function DashboardPage({ session }) {
         alert('No tasks available. Create a task first!');
         return;
       }
+      
+      // 1. Prioritize task that is ALREADY running (last working task)
+      const running = tasks.find(t => t.timerRunning);
+      if (running) {
+        setFocusTask(running);
+        setFocusOpen(true);
+        return;
+      }
+
+      // 2. Prioritize my active tasks with deadlines
       const myActive = tasks.filter(t => t.status !== 'done' && t.assigneeId === currentUserId);
-      if (myActive.length === 0) {
-        // Fallback: any active task
+      if (myActive.length > 0) {
+        const withDl = myActive.filter(t => t.deadline).sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+        setFocusTask(withDl[0] || myActive[0]);
+      } else {
+        // 3. Fallback: any active task with deadline
         const anyActive = tasks.filter(t => t.status !== 'done');
         if (anyActive.length === 0) { alert('All tasks are done!'); return; }
         const withDl = anyActive.filter(t => t.deadline).sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
         setFocusTask(withDl[0] || anyActive[0]);
-      } else {
-        const withDl = myActive.filter(t => t.deadline).sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
-        setFocusTask(withDl[0] || myActive[0]);
       }
       setFocusOpen(true);
     } catch (e) {
@@ -91,17 +101,39 @@ export default function DashboardPage({ session }) {
     }
   }, [currentTeam, currentUserId]);
 
-  const handleFocusTimer = useCallback(async (id, action) => {
-    await api(`/api/tasks/${id}/timer`, 'POST', { action });
-    // Refresh the focus task
-    if (currentTeam) {
-      const tasks = await api(`/api/tasks?teamId=${currentTeam.id}`);
-      if (tasks && Array.isArray(tasks)) {
-        const updated = tasks.find(t => t.id === id);
-        if (updated) setFocusTask(updated);
-      }
+  const handleOpenFocus = (task) => {
+    setFocusTask(task);
+    setFocusOpen(true);
+  };
+
+  // Auto-open if a task is already running on load
+  useEffect(() => {
+    if (currentTeam && !focusOpen) {
+      api(`/api/tasks?teamId=${currentTeam.id}`).then(tasks => {
+        if (tasks && Array.isArray(tasks)) {
+          const running = tasks.find(t => t.timerRunning);
+          if (running) {
+            setFocusTask(running);
+            setFocusOpen(true);
+          }
+        }
+      });
     }
   }, [currentTeam]);
+
+  const handleFocusTimer = useCallback(async (id, action) => {
+    try {
+      const updated = await api(`/api/tasks/${id}/timer`, 'POST', { action });
+      if (updated && !updated.error) {
+        setFocusTask(updated);
+        // Also update in the board/list if needed (optional since we have Socket.io but helps for immediate feedback)
+      } else {
+        console.error('Timer action failed:', updated?.error);
+      }
+    } catch (err) {
+      console.error('Timer action error:', err);
+    }
+  }, []);
 
   const closeFocusMode = () => { setFocusOpen(false); setFocusTask(null); };
 
@@ -275,7 +307,7 @@ export default function DashboardPage({ session }) {
           </motion.div>
         ) : (
           <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
-            {activeTab === 'board' && <TaskBoard teamId={currentTeam.id} session={session} />}
+            {activeTab === 'board' && <TaskBoard teamId={currentTeam.id} session={session} onFocus={handleOpenFocus} />}
             {activeTab === 'notes' && <NotesPanel teamId={currentTeam.id} />}
             {activeTab === 'files' && <FilesPanel teamId={currentTeam.id} />}
             {activeTab === 'whiteboard' && <WhiteboardPanel teamId={currentTeam.id} />}

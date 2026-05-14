@@ -490,7 +490,14 @@ app.post('/api/tasks', auth, async (req, res) => {
     }
   }
 
-  const deadlineVal = req.body.deadline || req.body.dueDate || null;
+  let deadlineVal = req.body.deadline || req.body.dueDate || null;
+  if (deadlineVal) {
+    try {
+      deadlineVal = new Date(deadlineVal).toISOString();
+    } catch (e) {
+      deadlineVal = null;
+    }
+  }
   const insertData = {
     title: sanitize(req.body.title),
     description: sanitize(req.body.description),
@@ -597,17 +604,23 @@ app.post('/api/tasks/:id/timer', auth, async (req, res) => {
 
   if (action === 'start') {
     updates.timer_running = true;
-    updates.timer_start = Date.now();
+    updates.timer_start = new Date().toISOString();
     updates.status = 'in progress';
   } else if (action === 'stop') {
     let actual = task.actual_time || 0;
-    if (task.timer_start) actual += Math.floor((Date.now() - task.timer_start) / 60000);
+    if (task.timer_start) {
+      const startMs = new Date(task.timer_start).getTime();
+      actual += Math.floor((Date.now() - startMs) / 60000);
+    }
     updates.actual_time = actual;
     updates.timer_running = false;
     updates.timer_start = null;
   } else if (action === 'complete') {
     let actual = task.actual_time || 0;
-    if (task.timer_start) actual += Math.floor((Date.now() - task.timer_start) / 60000);
+    if (task.timer_start) {
+      const startMs = new Date(task.timer_start).getTime();
+      actual += Math.floor((Date.now() - startMs) / 60000);
+    }
     updates.actual_time = actual;
     updates.timer_running = false;
     updates.timer_start = null;
@@ -644,8 +657,8 @@ function mapTask(t) {
     assigneeId: t.assignee_id,
     estimatedTime: t.estimated_time,
     actualTime: t.actual_time,
-    dueDate: t.due_date,
-    deadline: t.due_date,
+    dueDate: t.due_date ? new Date(t.due_date).toISOString() : null,
+    deadline: t.due_date ? new Date(t.due_date).toISOString() : null,
     difficulty: t.difficulty || null,
     timerRunning: t.timer_running,
     timerStart: t.timer_start,

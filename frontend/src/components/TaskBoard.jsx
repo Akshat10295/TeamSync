@@ -16,7 +16,13 @@ function getUrgency(deadline) {
 
 function formatCountdown(deadline) {
   if (!deadline) return '';
-  const ms = new Date(deadline).getTime() - Date.now();
+  // Only replace T with space for local input strings (no Z or + indicator)
+  // This prevents breaking perfect ISO strings from the API
+  let dateStr = deadline;
+  if (typeof deadline === 'string' && deadline.includes('T') && !deadline.includes('Z') && !deadline.includes('+')) {
+    dateStr = deadline.replace('T', ' ');
+  }
+  const ms = new Date(dateStr).getTime() - Date.now();
   if (ms < 0) return 'Overdue';
   const d = Math.floor(ms / 86400000);
   const h = Math.floor((ms % 86400000) / 3600000);
@@ -112,7 +118,7 @@ function AssigneeSelect({ members, value, onChange, currentUserId }) {
   );
 }
 
-function TaskCard({ task, members, onUpdate, onDelete, onTimer, isNextBest }) {
+function TaskCard({ task, members, onUpdate, onDelete, onTimer, onFocus, isNextBest }) {
   const [showMenu, setShowMenu] = useState(false);
   const [countdown, setCountdown] = useState('');
   const assignee = members.find(m => m.id === task.assigneeId);
@@ -135,13 +141,19 @@ function TaskCard({ task, members, onUpdate, onDelete, onTimer, isNextBest }) {
 
   const workTime = () => {
     if (!task.timerRunning) return task.actualTime ? `${task.actualTime}m` : null;
-    const elapsed = task.timerStart ? Math.floor((Date.now() - task.timerStart) / 60000) : 0;
+    const elapsed = task.timerStart ? Math.floor((Date.now() - new Date(task.timerStart).getTime()) / 60000) : 0;
     return `${(task.actualTime || 0) + elapsed}m`;
   };
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-      className={`group relative p-4 rounded-2xl bg-white/[0.03] border transition-all hover:bg-white/[0.06] ${URGENCY_BORDER[urgency.level]} ${isNextBest ? 'ring-2 ring-purple-500/40' : ''}`}>
+    <motion.div 
+      layout 
+      initial={{ opacity: 0, y: 10 }} 
+      animate={{ opacity: 1, y: 0 }} 
+      exit={{ opacity: 0, scale: 0.95 }}
+      onClick={() => onFocus && onFocus(task)}
+      className={`group relative p-4 rounded-2xl bg-white/[0.03] border transition-all hover:bg-white/[0.06] cursor-pointer active:scale-[0.98] ${URGENCY_BORDER[urgency.level]} ${isNextBest ? 'ring-2 ring-purple-500/40' : ''}`}
+    >
       {isNextBest && (
         <div className="absolute -top-2 -right-2 bg-purple-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg">
           <Star className="w-3 h-3" /> NEXT
@@ -150,7 +162,10 @@ function TaskCard({ task, members, onUpdate, onDelete, onTimer, isNextBest }) {
       <div className="flex justify-between items-start mb-2">
         <h4 className="text-sm font-semibold text-white pr-6 leading-tight">{task.title}</h4>
         <div ref={menuRef} className="relative">
-          <button onClick={() => setShowMenu(!showMenu)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white transition-all p-0.5 cursor-pointer">
+          <button 
+            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }} 
+            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white transition-all p-0.5 cursor-pointer"
+          >
             <MoreVertical className="w-4 h-4" />
           </button>
           <AnimatePresence>
@@ -161,14 +176,14 @@ function TaskCard({ task, members, onUpdate, onDelete, onTimer, isNextBest }) {
                 {task.status !== 'done' && (
                   <>
                     {(task.status === 'planned' || task.status === 'missed') && (
-                      <button onClick={() => { onUpdate(task.id, { status: 'in progress' }); setShowMenu(false); }}
+                      <button onClick={(e) => { e.stopPropagation(); onUpdate(task.id, { status: 'in progress' }); setShowMenu(false); }}
                         className="w-full text-left px-3 py-2 rounded-lg text-xs text-gray-300 hover:bg-white/10 transition-all cursor-pointer">▶ Start</button>
                     )}
-                    <button onClick={() => { onUpdate(task.id, { status: 'done' }); setShowMenu(false); }}
+                    <button onClick={(e) => { e.stopPropagation(); onUpdate(task.id, { status: 'done' }); setShowMenu(false); }}
                       className="w-full text-left px-3 py-2 rounded-lg text-xs text-green-400 hover:bg-green-500/10 transition-all cursor-pointer">✅ Mark Done</button>
                   </>
                 )}
-                <button onClick={() => { onDelete(task.id); setShowMenu(false); }}
+                <button onClick={(e) => { e.stopPropagation(); onDelete(task.id); setShowMenu(false); }}
                   className="w-full text-left px-3 py-2 rounded-lg text-xs text-red-400 hover:bg-red-500/10 transition-all cursor-pointer">🗑 Delete</button>
               </motion.div>
             )}
@@ -195,13 +210,13 @@ function TaskCard({ task, members, onUpdate, onDelete, onTimer, isNextBest }) {
           </span>
         )}
         {workTime() && (
-          <span className={`text-[10px] px-2 py-1 rounded-full flex items-center gap-1 ${task.timerRunning ? 'text-green-400 bg-green-500/10 animate-pulse' : 'text-gray-500 bg-white/5'}`}>
-            <Timer className="w-3 h-3" />{workTime()}
+          <span className={`text-[10px] px-2 py-1 rounded-full flex items-center gap-1 ${task.timerRunning ? 'text-green-400 bg-green-500/10 animate-pulse font-bold' : 'text-gray-500 bg-white/5'}`}>
+            <Timer className="w-3 h-3" /> Worked: {workTime()}
           </span>
         )}
       </div>
       {task.status !== 'done' && (
-        <div className="flex gap-1.5 mt-3 pt-3 border-t border-white/5">
+        <div className="flex gap-1.5 mt-3 pt-3 border-t border-white/5" onClick={(e) => e.stopPropagation()}>
           {!task.timerRunning ? (
             <button onClick={() => onTimer(task.id, 'start')}
               className="flex items-center gap-1 text-[10px] text-green-400 hover:bg-green-500/10 px-2 py-1 rounded-lg transition-all cursor-pointer">
@@ -225,7 +240,7 @@ function TaskCard({ task, members, onUpdate, onDelete, onTimer, isNextBest }) {
   );
 }
 
-export default function TaskBoard({ teamId, session }) {
+export default function TaskBoard({ teamId, session, onFocus }) {
   const [tasks, setTasks] = useState([]);
   const [members, setMembers] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -265,7 +280,10 @@ export default function TaskBoard({ teamId, session }) {
     // Convert datetime-local to proper ISO string with timezone
     let deadlineISO = null;
     if (newTask.deadline) {
-      deadlineISO = new Date(newTask.deadline).toISOString();
+      const [dPart, tPart] = newTask.deadline.split('T');
+      const [y, m, day] = dPart.split('-').map(Number);
+      const [hh, mm] = tPart.split(':').map(Number);
+      deadlineISO = new Date(y, m - 1, day, hh, mm).toISOString();
     }
     await api('/api/tasks', 'POST', {
       title: newTask.title,
@@ -328,7 +346,7 @@ export default function TaskBoard({ teamId, session }) {
               <div className="space-y-3 min-h-[100px] max-h-[60vh] overflow-y-auto pr-1">
                 <AnimatePresence>
                   {colTasks.map(task => (
-                    <TaskCard key={task.id} task={task} members={members} onUpdate={updateTask} onDelete={deleteTask} onTimer={timerAction} isNextBest={task.id === nextBestId} />
+                    <TaskCard key={task.id} task={task} members={members} onUpdate={updateTask} onDelete={deleteTask} onTimer={timerAction} onFocus={onFocus} isNextBest={task.id === nextBestId} />
                   ))}
                 </AnimatePresence>
                 {colTasks.length === 0 && (
@@ -361,6 +379,15 @@ export default function TaskBoard({ teamId, session }) {
                   <label className="text-xs text-gray-400 mb-1 block">Deadline</label>
                   <input type="datetime-local" value={newTask.deadline} onChange={e => setNewTask({ ...newTask, deadline: e.target.value })}
                     className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 [color-scheme:dark]" />
+                  {newTask.deadline && (
+                    <p className={`text-[10px] mt-1.5 px-1 font-medium ${
+                      new Date(newTask.deadline.replace('T', ' ')).getTime() < Date.now() ? 'text-red-400' : 'text-purple-400'
+                    }`}>
+                      {new Date(newTask.deadline.replace('T', ' ')).getTime() < Date.now() ? '⚠️ Overdue' : '⏰ Timer will be set for'}: {
+                        formatCountdown(newTask.deadline.replace('T', ' '))
+                      } from now
+                    </p>
+                  )}
                 </div>
                 <button type="submit"
                   className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-xl py-3 font-semibold shadow-lg shadow-purple-500/25 transition-all cursor-pointer">
