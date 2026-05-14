@@ -3,7 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import IdeWorkspace from '../components/IdeWorkspace';
 import FileExplorer from '../components/FileExplorer';
-import { ChevronLeft, Loader2, File } from 'lucide-react';
+import * as Icons from 'lucide-react';
+const { ChevronLeft, Loader2, File, Download, ChevronRight, X, Sparkles } = Icons;
+const GitHub = Icons.GitHub || Icons.Github || Icons.Code;
 import { api } from '../lib/api';
 import socket from '../lib/socket';
 
@@ -14,6 +16,27 @@ export default function IdePage({ session }) {
   const [files, setFiles] = useState([]);
   const [activeFile, setActiveFile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [projectData, setProjectData] = useState(null);
+
+  // Phase 5 States
+  const [isAiOpen, setIsAiOpen] = useState(false);
+  const [githubUrl, setGithubUrl] = useState('');
+  const [dashboardFiles, setDashboardFiles] = useState([]);
+  const [githubAssets, setGithubAssets] = useState([]);
+  const fileInputRef = React.useRef(null);
+  const [importTab, setImportTab] = useState('github'); // 'github' or 'dashboard'
+  const [toast, setToast] = useState(null);
+  const [isPushing, setIsPushing] = useState(false);
+  const [commitMessage, setCommitMessage] = useState('Update from TeamSync IDE');
+  const [branchName, setBranchName] = useState('main');
+  const [showGitPanel, setShowGitPanel] = useState(false);
+
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
 
   // 1. Get user profile
   useEffect(() => {
@@ -83,14 +106,39 @@ export default function IdePage({ session }) {
         }
       };
 
+      const handleSynced = () => {
+        console.log('[IDE] 🔄 Files synced, refreshing list...');
+        fetchFiles();
+      };
+
       socket.on('ide:file-created', handleCreated);
       socket.on('ide:file-updated', handleUpdated);
       socket.on('ide:file-deleted', handleDeleted);
+      socket.on('ide:files-synced', handleSynced);
+
+      // Fetch Dashboard Files for import
+      api(`/api/projects/${projectId}/dashboard-files`).then(data => {
+        if (data && Array.isArray(data)) setDashboardFiles(data);
+      });
+
+      // Fetch Project Metadata and GitHub assets
+      api(`/api/projects/${projectId}`).then(data => {
+        if (data && !data.error) {
+          setProjectData(data);
+          if (data.github_repo) {
+            const [owner, repo] = data.github_repo.split('/');
+            api(`/api/github/contents/${owner}/${repo}`).then(assets => {
+              if (assets && Array.isArray(assets)) setGithubAssets(assets);
+            });
+          }
+        }
+      });
 
       return () => {
         socket.off('ide:file-created', handleCreated);
         socket.off('ide:file-updated', handleUpdated);
         socket.off('ide:file-deleted', handleDeleted);
+        socket.off('ide:files-synced', handleSynced);
       };
     }
   }, [projectId]);
@@ -151,6 +199,95 @@ export default function IdePage({ session }) {
     }
   };
 
+  const handleSingleGithubImport = async (item) => {
+    if (!projectData?.github_repo) return;
+    const [owner, repo] = projectData.github_repo.split('/');
+    try {
+      const data = await api(`/api/github/file/${owner}/${repo}/${item.path}`);
+      if (!data || data.error) throw new Error(data.error || 'Failed to fetch content');
+      let decoded;
+      try { decoded = atob(data.content.replace(/\n/g, '')); } catch { decoded = data.content; }
+
+      const res = await api(`/api/projects/${projectId}/files`, 'POST', {
+        name: item.name,
+        type: 'file',
+        content: decoded
+      });
+      if (res.error) throw new Error(res.error);
+      setActiveFile(res);
+    } catch (err) {
+      showToast('GitHub Sync Error: ' + err.message, 'error');
+    }
+  };
+
+
+  const handleDashboardImport = async (fileId) => {
+    showToast('Importing asset...', 'info');
+    try {
+      const res = await api(`/api/projects/${projectId}/import-dashboard`, 'POST', { fileId });
+      if (res.error) throw new Error(res.error);
+      setActiveFile(res);
+      showToast('Asset imported successfully!');
+      console.log('[IDE] 🔄 Dashboard file synced and opened:', res.name);
+    } catch (err) {
+      showToast('Import Error: ' + err.message, 'error');
+    }
+  };
+
+
+  const handlePushToGithub = async () => {
+    if (!projectData?.github_repo) {
+      showToast('No GitHub repository linked to this project', 'error');
+      return;
+    }
+    
+    const token = window.prompt('Enter your GitHub Personal Access Token (PAT):', '');
+    if (!token) return;
+
+    setIsPushing(true);
+    showToast('Pushing changes to GitHub...', 'info');
+    
+    try {
+      const res = await api(`/api/projects/${projectId}/github/push`, 'POST', {
+        branch: branchName,
+        message: commitMessage,
+        token
+      });
+
+      if (res && res.success) {
+        showToast('Successfully pushed to GitHub!');
+        setShowGitPanel(false);
+      } else {
+        throw new Error(res?.error || 'Push failed');
+      }
+    } catch (err) {
+      showToast('GitHub Push Error: ' + err.message, 'error');
+    } finally {
+      setIsPushing(false);
+    }
+  };
+  const handleLocalFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const content = event.target.result;
+      try {
+        const res = await api(`/api/projects/${projectId}/files`, 'POST', {
+          name: file.name,
+          type: 'file',
+          content: content
+        });
+        if (res.error) throw new Error(res.error);
+        setActiveFile(res);
+      } catch (err) {
+        alert('Upload Error: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   if (!user || loading) {
     return (
       <div className="h-screen w-screen bg-[#1e1e1e] flex flex-col items-center justify-center text-white space-y-4">
@@ -161,7 +298,7 @@ export default function IdePage({ session }) {
   }
 
   return (
-    <div className="h-screen w-screen bg-[#0d0c13] flex flex-col text-white overflow-hidden font-sans">
+    <div className="h-screen w-screen bg-[#0d0c13] flex flex-col text-white overflow-hidden font-sans relative">
       {/* Top Navbar */}
       <div className="h-12 border-b border-zinc-800 bg-[#181818] flex items-center px-4 justify-between shrink-0">
         <div className="flex items-center space-x-4">
@@ -179,7 +316,7 @@ export default function IdePage({ session }) {
         </div>
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-2">
-            <img src={`https://ui-avatars.com/api/?name=${user.name}&background=random`} alt="Avatar" className="w-6 h-6 rounded-full" />
+            <img src={`https://ui-avatars.com/api/?name=${user.name}&background=random`} alt="Avatar" className="w-6 h-6 rounded-full border border-white/10" />
             <span className="text-xs text-zinc-300">{user.name}</span>
           </div>
         </div>
@@ -196,11 +333,105 @@ export default function IdePage({ session }) {
             onAdd={handleAddFile}
             onDelete={handleDeleteFile}
             onRename={handleRename}
+            dashboardFiles={dashboardFiles}
+            onImportDashboard={handleDashboardImport}
+            githubAssets={githubAssets}
+            onImportGithub={handleSingleGithubImport}
+            githubRepoInfo={projectData?.github_repo ? { 
+              owner: projectData.github_repo.split('/')[0], 
+              repo: projectData.github_repo.split('/')[1] 
+            } : null}
           />
+
+          {/* XP Progress Section */}
+          <div className="p-4 border-t border-zinc-800 bg-[#141414]">
+            <div className="flex items-center justify-between mb-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+              <span className="text-purple-400">Level {user.level || 1}</span>
+              <span>{user.xp || 0} XP</span>
+            </div>
+            <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden mb-4">
+              <div 
+                className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-1000 shadow-[0_0_8px_rgba(168,85,247,0.4)]" 
+                style={{ width: `${Math.min(100, ((user.xp || 0) % 200) / 2)}%` }}
+              />
+            </div>
+            
+            {/* GitHub Sync Section */}
+            {projectData?.github_repo && (
+              <div className="mb-4">
+                <button 
+                  onClick={() => setShowGitPanel(!showGitPanel)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition-all text-[10px] font-bold uppercase tracking-wider border ${
+                    showGitPanel ? 'bg-purple-500/10 border-purple-500/30 text-purple-400' : 'bg-zinc-900 border-white/5 text-zinc-400 hover:text-white hover:bg-zinc-800'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2">
+                    <GitHub size={14} />
+                    <span>GitHub Sync</span>
+                  </div>
+                  <ChevronRight size={14} className={`transition-transform ${showGitPanel ? 'rotate-90' : ''}`} />
+                </button>
+
+                {showGitPanel && (
+                  <div className="mt-2 p-3 bg-zinc-900/50 rounded-xl border border-white/5 space-y-3 animate-in fade-in slide-in-from-top-2">
+                    <div>
+                      <label className="text-[9px] text-zinc-500 uppercase font-black mb-1 block">Target Branch</label>
+                      <input 
+                        value={branchName}
+                        onChange={(e) => setBranchName(e.target.value)}
+                        className="w-full bg-black/40 border border-white/5 rounded-lg px-2 py-1.5 text-[11px] text-zinc-300 focus:outline-none focus:border-purple-500/50"
+                        placeholder="main"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-zinc-500 uppercase font-black mb-1 block">Commit Message</label>
+                      <textarea 
+                        value={commitMessage}
+                        onChange={(e) => setCommitMessage(e.target.value)}
+                        className="w-full bg-black/40 border border-white/5 rounded-lg px-2 py-1.5 text-[11px] text-zinc-300 focus:outline-none focus:border-purple-500/50 resize-none h-16"
+                        placeholder="What changed?"
+                      />
+                    </div>
+                    <button 
+                      onClick={handlePushToGithub}
+                      disabled={isPushing}
+                      className="w-full flex items-center justify-center space-x-2 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg transition-all text-[10px] font-bold uppercase tracking-wider"
+                    >
+                      {isPushing ? (
+                        <>
+                          <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                          <span>Pushing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Icons.UploadCloud size={14} />
+                          <span>Push to GitHub</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              onChange={handleLocalFileUpload} 
+            />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full flex items-center justify-center space-x-2 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl transition-all text-[10px] font-bold uppercase tracking-wider border border-white/5 shadow-lg mb-2"
+            >
+              <Download size={14} />
+              <span>Upload from PC</span>
+            </button>
+          </div>
         </div>
 
         {/* Editor Area */}
-        <div className="flex-1 overflow-hidden relative">
+        <div className="flex-1 overflow-hidden relative flex flex-col">
           {activeFile ? (
             <IdeWorkspace 
               key={activeFile.id}
@@ -208,10 +439,12 @@ export default function IdePage({ session }) {
               user={user} 
               fileId={activeFile.id}
               fileName={activeFile.name}
+              isAiOpen={isAiOpen}
+              setIsAiOpen={setIsAiOpen}
             />
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-zinc-600 space-y-4">
-              <div className="w-24 h-24 rounded-full bg-zinc-900 flex items-center justify-center">
+            <div className="h-full flex flex-col items-center justify-center text-zinc-600 space-y-4 bg-[#1e1e1e]">
+              <div className="w-24 h-24 rounded-full bg-zinc-900/50 flex items-center justify-center">
                 <File size={40} className="text-zinc-800" />
               </div>
               <div className="text-center">
@@ -222,7 +455,27 @@ export default function IdePage({ session }) {
           )}
         </div>
       </div>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[9999] animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className={`px-4 py-3 rounded-xl shadow-2xl backdrop-blur-md border flex items-center space-x-3 ${
+            toast.type === 'error' ? 'bg-red-500/20 border-red-500/30 text-red-400' :
+            toast.type === 'info' ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' :
+            'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+          }`}>
+            {toast.type === 'error' ? <Icons.AlertCircle size={18} /> : 
+             toast.type === 'info' ? <Icons.Info size={18} /> : 
+             <Icons.CheckCircle2 size={18} />}
+            <span className="text-sm font-medium">{toast.message}</span>
+            <button onClick={() => setToast(null)} className="ml-2 hover:opacity-70">
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 

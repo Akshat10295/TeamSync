@@ -10,19 +10,19 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const multer = require('multer');
-const { createClient } = require('@supabase/supabase-js');
+const { supabase, supabaseAdmin } = require('../utils/supabase');
 const { executeCode } = require('../utils/executionEngine');
+const { 
+  fetchRepoContent, 
+  downloadFile, 
+  getBranch, 
+  createBlob, 
+  createTree, 
+  createCommit, 
+  updateRef 
+} = require('../utils/githubService');
 
-// ─── Supabase Client ─────────────────────────────────────────────────────────
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
-);
-
-// Admin client for storage (bypasses RLS — safe since this is server-side only)
-const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY
-  ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-  : supabase;
+const { askAI } = require('../utils/aiService');
 
 /* const app = express(); */
 /* const server = ... */
@@ -1041,6 +1041,143 @@ function mapFile(f) {
     };
   }
 
+// ─── Project / Team Metadata ──────────────────────────────────────
+app.get('/api/projects/:projectId', auth, async (req, res) => {
+  const { data: team, error } = await supabase
+    .from('teams')
+    .select('*')
+    .eq('id', req.params.projectId)
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(team);
+});
+
+app.get('/api/projects/:projectId/dashboard-files', auth, async (req, res) => {
+  const { data: files, error } = await supabase
+    .from('files')
+    .select('*')
+    .eq('team_id', req.params.projectId);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(files || []);
+});
+
+// GET dashboard file content (used by IDE)
+app.get('/api/projects/:projectId/dashboard-files/:fileId', auth, async (req, res) => {
+  try {
+    const { data: dbFile, error: fetchErr } = await supabase
+      .from('files')
+      .select('*')
+      .eq('id', req.params.fileId)
+      .eq('team_id', req.params.projectId)
+      .single();
+
+    if (fetchErr || !dbFile) return res.status(404).json({ error: 'Dashboard file not found' });
+
+    const storagePath = dbFile.storage_path || dbFile.stored_name;
+    const { data: blob, error: downloadErr } = await supabaseAdmin.storage
+      .from('team-files') 
+      .download(storagePath);
+
+    if (downloadErr || !blob) {
+      return res.status(500).json({ error: 'Failed to download content from storage' });
+    }
+
+    const content = await blob.text();
+    res.json({ name: dbFile.name, content });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve file content' });
+  }
+});
+
+
+app.post('/api/projects/:projectId/import-dashboard', auth, async (req, res) => {
+  const { fileId } = req.body;
+  
+  // 1. Get file metadata from dashboard files
+  const { data: dashFile, error: fetchErr } = await supabase
+    .from('files')
+    .select('*')
+    .eq('id', fileId)
+    .single();
+
+  if (fetchErr || !dashFile) return res.status(404).json({ error: 'Dashboard file not found' });
+
+  // 2. Read content from Supabase storage
+  const storagePath = dashFile.storage_path || dashFile.stored_name;
+  const { data: blob, error: downloadErr } = await supabaseAdmin.storage
+    .from(STORAGE_BUCKET)
+    .download(storagePath);
+
+  if (downloadErr || !blob) {
+    console.error('[IDE Sync] Download Error:', downloadErr);
+    return res.status(500).json({ error: 'Failed to download file from storage' });
+  }
+
+  // Robust Node.js conversion
+  const arrayBuffer = await blob.arrayBuffer();
+  const content = Buffer.from(arrayBuffer).toString('utf-8');
+
+  console.log(`[IDE Sync] File: ${dashFile.name}, Size: ${blob.size}, Content length: ${content.length}`);
+
+  // 3. Create or Update file in IDE filesystem (Sync Logic)
+  // First, check if a file with this name already exists in the root of the IDE
+  const { data: existing } = await supabase
+    .from('ide_files')
+    .select('id')
+    .eq('team_id', req.params.projectId)
+    .eq('name', dashFile.name)
+    .is('parent_id', null)
+    .single();
+
+  let ideFile;
+  if (existing) {
+    // Update existing
+    const { data: updated, error: updateErr } = await supabase
+      .from('ide_files')
+      .update({ content, updated_at: new Date().toISOString() })
+      .eq('id', existing.id)
+      .select()
+      .single();
+    if (updateErr) return res.status(500).json({ error: updateErr.message });
+    ideFile = updated;
+  } else {
+    // Create new
+    const { data: created, error: createErr } = await supabase
+      .from('ide_files')
+      .insert({
+        team_id: req.params.projectId,
+        name: dashFile.name,
+        type: 'file',
+        content: content
+      })
+      .select()
+      .single();
+    if (createErr) return res.status(500).json({ error: createErr.message });
+    ideFile = created;
+  }
+
+
+  // Broadcast to project room
+  io.to(req.params.projectId).emit('ide:file-created', { projectId: req.params.projectId, file: ideFile });
+  
+  res.json(ideFile);
+});
+
+// GET Single GitHub File Content
+app.get('/api/github/file/:owner/:repo/:path(*)', auth, async (req, res) => {
+  const { owner, repo, path: filePath } = req.params;
+  try {
+    const data = await downloadFile(`https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`);
+    // GitHub API returns content as base64
+    res.json(data);
+  } catch (err) {
+    console.error('GitHub File Fetch Error:', err);
+    res.status(500).json({ error: 'Failed to fetch GitHub file' });
+  }
+});
+
 // ─── IDE File System ──────────────────────────────────────────────
 app.get('/api/projects/:projectId/files', auth, async (req, res) => {
   const { data: files, error } = await supabase
@@ -1054,8 +1191,21 @@ app.get('/api/projects/:projectId/files', auth, async (req, res) => {
   res.json(files || []);
 });
 
+// Get single IDE file
+app.get('/api/projects/:projectId/files/:fileId', auth, async (req, res) => {
+  const { data: file, error } = await supabase
+    .from('ide_files')
+    .select('*')
+    .eq('team_id', req.params.projectId)
+    .eq('id', req.params.fileId)
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  if (!file) return res.status(404).json({ error: 'File not found' });
+  res.json(file);
+});
+
 app.post('/api/projects/:projectId/files', auth, async (req, res) => {
-  const { name, type, parentId } = req.body;
+  const { name, type, parentId, content } = req.body;
   const { data: file, error } = await supabase
     .from('ide_files')
     .insert({
@@ -1063,13 +1213,16 @@ app.post('/api/projects/:projectId/files', auth, async (req, res) => {
       name: sanitize(name),
       type,
       parent_id: parentId || null,
-      content: type === 'file' ? '' : null
+      content: type === 'file' ? (content || '') : null
     })
     .select()
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
   
+  // XP: Award for file creation
+  await awardXP(req.user.id, 5, `Created IDE file: ${name}`);
+
   // Broadcast to project room
   io.to(req.params.projectId).emit('ide:file-created', { projectId: req.params.projectId, file });
   res.json(file);
@@ -1108,6 +1261,196 @@ app.delete('/api/projects/:projectId/files/:fileId', auth, async (req, res) => {
   // Broadcast to project room
   io.to(req.params.projectId).emit('ide:file-deleted', { projectId: req.params.projectId, fileId: req.params.fileId });
   res.json({ success: true });
+});
+
+// --- Phase 5 Connectivity Routes ---
+
+// Import from GitHub
+app.post('/api/projects/:projectId/import-github', auth, async (req, res) => {
+  const { url } = req.body;
+  const { projectId } = req.params;
+
+  if (!url) return res.status(400).json({ error: 'URL is required' });
+
+  try {
+    // Parse owner and repo from URL
+    const match = url.match(/github\.com\/([^/]+)\/([^/]+)/);
+    if (!match) return res.status(400).json({ error: 'Invalid GitHub URL' });
+    const [_, owner, repo] = match;
+
+    let importCount = 0;
+
+    // Recursive function to fetch and save files
+    const processPath = async (ghPath = '', parentId = null) => {
+      const items = await fetchRepoContent(owner, repo, ghPath);
+      
+      for (const item of items) {
+        if (item.type === 'dir') {
+          // Create folder in IDE
+          const { data: folder, error } = await supabase
+            .from('ide_files')
+            .insert({ team_id: projectId, name: item.name, type: 'folder', parent_id: parentId })
+            .select().single();
+          
+          if (!error && folder) {
+            await processPath(item.path, folder.id);
+          }
+        } else if (item.type === 'file') {
+          // Only import code/text files to avoid bloat
+          const ext = item.name.split('.').pop().toLowerCase();
+          const allowed = ['js', 'jsx', 'ts', 'tsx', 'py', 'ipynb', 'java', 'cpp', 'h', 'html', 'css', 'json', 'md', 'txt'];
+          
+          if (allowed.includes(ext)) {
+            const content = await downloadFile(item.download_url);
+            const { error } = await supabase
+              .from('ide_files')
+              .insert({ 
+                team_id: projectId, 
+                name: item.name, 
+                type: 'file', 
+                parent_id: parentId, 
+                content: typeof content === 'string' ? content : JSON.stringify(content, null, 2)
+              });
+            
+            if (!error) importCount++;
+          }
+        }
+      }
+    };
+
+    await processPath();
+    
+    // XP: Award for big project import
+    await awardXP(req.user.id, 25, `Imported project from GitHub: ${owner}/${repo}`);
+
+    // Notify clients to refresh file tree
+    io.to(projectId).emit('ide:files-synced', { projectId });
+
+    res.json({ success: true, count: importCount });
+  } catch (err) {
+    console.error('GitHub Import Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Import from Dashboard Storage
+app.post('/api/projects/:projectId/import-dashboard-file', auth, async (req, res) => {
+  const { dashboardFileId, parentId } = req.body;
+  const { projectId } = req.params;
+
+  try {
+    const { data: dbFile, error: fetchErr } = await supabase.from('files').select('*').eq('id', dashboardFileId).single();
+    if (fetchErr || !dbFile) return res.status(404).json({ error: 'Dashboard file not found' });
+
+    const storagePath = dbFile.storage_path || dbFile.stored_name;
+    const { data: blob, error: downloadErr } = await supabaseAdmin.storage.from('teamsync-files').download(storagePath);
+    if (downloadErr) return res.status(500).json({ error: 'Failed to download content' });
+
+    const content = await blob.text();
+    const { data: ideFile, error: insertErr } = await supabase.from('ide_files').insert({
+      team_id: projectId, name: dbFile.name, type: 'file', parent_id: parentId || null, content: content
+    }).select().single();
+
+    if (insertErr) return res.status(500).json({ error: insertErr.message });
+
+    await awardXP(req.user.id, 15, `Imported dashboard file: ${dbFile.name}`);
+    io.to(projectId).emit('ide:file-created', { projectId, file: ideFile });
+    res.json(ideFile);
+  } catch (err) {
+    res.status(500).json({ error: 'Import failed' });
+  }
+});
+
+// Import from GitHub
+app.post('/api/projects/:projectId/import-github', auth, async (req, res) => {
+  const { url, parentId } = req.body;
+  const { projectId } = req.params;
+
+  try {
+    const match = url.match(/github\.com\/([^/]+)\/([^/]+)/);
+    if (!match) return res.status(400).json({ error: 'Invalid GitHub URL' });
+    const [_, owner, repo] = match;
+
+    const contents = await fetchRepoContent(owner, repo);
+    const files = contents.filter(f => f.type === 'file' && !f.name.startsWith('.')).slice(0, 5);
+
+    for (const f of files) {
+      const content = await downloadFile(f.download_url);
+      const { data: ideFile } = await supabase.from('ide_files').insert({
+        team_id: projectId, name: f.name, type: 'file', parent_id: parentId || null, content: content
+      }).select().single();
+      if (ideFile) io.to(projectId).emit('ide:file-created', { projectId, file: ideFile });
+    }
+
+    await awardXP(req.user.id, 25, `Imported from GitHub: ${repo}`);
+    res.json({ success: true, count: files.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+// Push IDE files to GitHub
+app.post('/api/projects/:projectId/github/push', auth, async (req, res) => {
+  const { projectId } = req.params;
+  const { branch = 'main', message = 'Update from TeamSync IDE', token: userToken } = req.body;
+
+  // Use provided token or system token
+  const token = userToken || process.env.GITHUB_TOKEN;
+  if (!token) return res.status(400).json({ error: 'GitHub Token is required for pushing' });
+
+  try {
+    // 1. Get project and linked repo
+    const { data: team } = await supabase.from('teams').select('github_repo').eq('id', projectId).single();
+    if (!team || !team.github_repo) return res.status(400).json({ error: 'No GitHub repository linked to this project' });
+    const [owner, repo] = team.github_repo.split('/');
+
+    // 2. Fetch all IDE files
+    const { data: files } = await supabase.from('ide_files').select('*').eq('team_id', projectId).eq('type', 'file');
+    if (!files || files.length === 0) return res.status(400).json({ error: 'No files to push' });
+
+    // 3. Get current branch state
+    const branchData = await getBranch(owner, repo, branch, token);
+    const baseTreeSha = branchData.commit.commit.tree.sha;
+    const parentCommitSha = branchData.commit.sha;
+
+    // 4. Create blobs and tree items
+    const treeItems = [];
+    for (const file of files) {
+      const blob = await createBlob(owner, repo, file.content || '', token);
+      treeItems.push({
+        path: file.name, // TODO: Handle nested paths if folders are implemented
+        mode: '100644',
+        type: 'blob',
+        sha: blob.sha
+      });
+    }
+
+    // 5. Create new tree
+    const newTree = await createTree(owner, repo, baseTreeSha, treeItems, token);
+
+    // 6. Create commit
+    const newCommit = await createCommit(owner, repo, message, newTree.sha, parentCommitSha, token);
+
+    // 7. Update ref
+    await updateRef(owner, repo, branch, newCommit.sha, token);
+
+    // XP: Award for contribution
+    await awardXP(req.user.id, 50, `Pushed changes to GitHub: ${team.github_repo} (${branch})`);
+
+    res.json({ success: true, commit: newCommit.sha });
+  } catch (err) {
+    console.error('GitHub Push Error:', err);
+    res.status(500).json({ error: err.message || 'Failed to push to GitHub' });
+  }
+});
+
+app.post('/api/ai/chat', auth, async (req, res) => {
+  const { prompt, context } = req.body;
+  try {
+    const response = await askAI(prompt, context);
+    res.json({ response });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 
@@ -1763,6 +2106,12 @@ io.on('connection', (socket) => {
         (exitCode) => {
           console.log(`[Socket] 🏁 Execution finished with code ${exitCode}`);
           socket.emit('code-exit', exitCode);
+
+          // XP: Award for successful execution
+          if (exitCode === 0) {
+            const userData = onlineUsers.get(socket.id);
+            if (userData) awardXP(userData.userId, 10, `Successfully executed ${language} code`);
+          }
         }
       );
     } catch (err) {

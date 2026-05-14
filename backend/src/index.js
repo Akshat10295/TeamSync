@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const WebSocket = require('ws');
 const setupWSConnection = require('y-websocket/bin/utils').setupWSConnection;
 const setupRoutes = require('./routes/api');
+const { supabase, supabaseAdmin } = require('./utils/supabase');
 
 require('dotenv').config();
 
@@ -34,6 +35,32 @@ setPersistence({
       Y.applyUpdate(ydoc, persistedState);
       
       console.log(`[Yjs] ✅ State loaded for room: ${docName}`);
+
+      // If document is empty, try to seed from Supabase
+      const monacoText = ydoc.getText('monaco');
+      if (monacoText.length === 0) {
+        if (docName.startsWith('project-')) {
+          const parts = docName.split('-');
+          // UUIDs have 5 parts (4 hyphens). Room is project-UUID-UUID.
+          // project is parts[0], projectId is parts[1-5], fileId is parts[6-10]
+          if (parts.length >= 11) {
+            const projectId = parts.slice(1, 6).join('-');
+            const fileId = parts.slice(6, 11).join('-');
+            console.log(`[Yjs] 🔍 Room empty. Seeding from DB for file: ${fileId}`);
+            
+            const { data: file, error } = await supabaseAdmin
+              .from('ide_files')
+              .select('content')
+              .eq('id', fileId)
+              .single();
+              
+            if (!error && file && file.content) {
+              monacoText.insert(0, file.content);
+              console.log(`[Yjs] ✨ Seeded document with ${file.content.length} chars`);
+            }
+          }
+        }
+      }
 
       // Listen for updates and store them
       ydoc.on('update', update => {

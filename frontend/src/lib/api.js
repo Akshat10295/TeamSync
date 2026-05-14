@@ -64,3 +64,5 @@ export async function apiDownload(path) {
   const blob = await res.blob();
   return { blob, filename };
 }
+
+export default api;

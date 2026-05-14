@@ -40,22 +40,9 @@ export default function GitHubPanel({ teamId, currentTeam, isLeader, onTeamUpdat
   };
 
   const fetchFile = async (path) => {
-    if (!owner || !repo) return;
-    setLoading(true);
-    setError('');
-    try {
-      const data = await api(`/api/github/file/${owner}/${repo}/${path}`);
-      if (data && data.content !== undefined) {
-        let decoded;
-        try { decoded = atob(data.content.replace(/\n/g, '')); } catch { decoded = data.content; }
-        setFileContent({ name: data.name || path.split('/').pop(), path, content: decoded });
-      } else {
-        setError(data?.error || 'Failed to load file');
-      }
-    } catch (e) {
-      setError('Failed to load file');
-    }
-    setLoading(false);
+    // Content viewing disabled in dashboard as per user request.
+    // Files should be opened in the IDE.
+    alert("Please open this file in the Nexus IDE to view and edit its content.");
   };
 
   useEffect(() => {
@@ -159,16 +146,6 @@ export default function GitHubPanel({ teamId, currentTeam, isLeader, onTeamUpdat
 
       {loading ? (
         <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" /></div>
-      ) : fileContent ? (
-        <div className="glass-panel rounded-2xl overflow-hidden">
-          <div className="p-3 border-b border-white/5 flex items-center gap-2">
-            <FileCode className="w-4 h-4 text-gray-400" />
-            <span className="text-sm text-white font-medium">{fileContent.name}</span>
-          </div>
-          <pre className="p-4 overflow-x-auto text-xs text-gray-300 leading-relaxed max-h-[60vh] overflow-y-auto">
-            <code>{fileContent.content}</code>
-          </pre>
-        </div>
       ) : (
         <div className="space-y-1 max-h-[65vh] overflow-y-auto">
           {contents.map((item, i) => (

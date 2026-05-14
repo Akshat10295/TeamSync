@@ -3,9 +3,18 @@ import Editor from '@monaco-editor/react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { MonacoBinding } from 'y-monaco';
-import { FileCode2, Save, Users, Play, Terminal as TerminalIcon } from 'lucide-react';
-import socket from '../lib/socket';
+import * as Icons from 'lucide-react';
+const { 
+  FileCode2, Save, Users, Play, Terminal: TerminalIcon, 
+  Sparkles, Download, X, ChevronRight, Globe 
+} = Icons;
+const GitHub = Icons.GitHub || Icons.Github || Icons.Code;
+
 import Terminal from './Terminal';
+import AiSidebar from './AiSidebar';
+import XpNotification from './XpNotification';
+import socket from '../lib/socket';
+import api from '../lib/api';
 
 export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
   const editorRef = useRef(null);
@@ -15,9 +24,15 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
   const [activeUsers, setActiveUsers] = useState([]);
 
   const [editorInstance, setEditorInstance] = useState(null);
-  const [terminalOutput, setTerminalOutput] = useState('');
+  const [terminalOutput, setTerminalOutput] = useState('Welcome to TeamSync Terminal v1.0\r\n\r\n');
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
+
+  // Phase 5 States
+  const [isAiOpen, setIsAiOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [githubUrl, setGithubUrl] = useState('');
+  const [userProfile, setUserProfile] = useState(null);
 
   // Initialize Yjs document and WebSocket connection
   useEffect(() => {
@@ -68,6 +83,11 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
 
     awareness.on('change', updateUsers);
     updateUsers();
+
+    // Fetch User Profile for XP/Level display
+    api('/api/profile').then(data => {
+      if (data && !data.error) setUserProfile(data);
+    });
 
     return () => {
       console.log(`[IDE] Cleaning up Yjs provider for ${fileName}`);
@@ -178,6 +198,19 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
     });
   };
 
+  const handleGitHubImport = async () => {
+    if (!githubUrl.trim()) return;
+    try {
+      const res = await api(`/api/projects/${projectId}/import-github`, 'POST', { url: githubUrl });
+      if (res.error) throw new Error(res.error);
+      setGithubUrl('');
+      setIsImportModalOpen(false);
+      alert(`Successfully imported ${res.count} files from GitHub!`);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
   useEffect(() => {
     const handleOutput = (data) => {
       console.log(`[IDE] 📥 Received code-output:`, data);
@@ -234,14 +267,27 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
             <Save size={14} />
             <span>Auto-saving</span>
           </button>
-          <button 
-            onClick={handleRunCode}
-            disabled={isExecuting}
-            className={`flex items-center space-x-1 px-3 py-1 ${isExecuting ? 'bg-zinc-700 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500'} text-white text-xs font-bold rounded shadow transition-colors`}
-          >
-            <Play size={12} fill="currentColor" />
-            <span>{isExecuting ? 'Running...' : 'Run Code'}</span>
-          </button>
+          <div className="flex items-center space-x-2">
+            <button 
+              onClick={handleRunCode}
+              disabled={isExecuting}
+              className={`flex items-center space-x-2 px-3 py-1.5 rounded-md transition-all font-bold text-[10px] uppercase tracking-wider shadow-lg ${
+                isExecuting ? 'bg-zinc-700 text-zinc-500' : 'bg-green-600 hover:bg-green-500 text-white shadow-green-900/20'
+              }`}
+            >
+              <Play size={12} fill="currentColor" />
+              <span>{isExecuting ? 'Running...' : 'Run Code'}</span>
+            </button>
+            <button 
+              onClick={() => setIsAiOpen(!isAiOpen)}
+              className={`flex items-center space-x-2 px-3 py-1.5 rounded-md transition-all font-bold text-[10px] uppercase tracking-wider shadow-lg ${
+                isAiOpen ? 'bg-purple-600 text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+              }`}
+            >
+              <Sparkles size={12} className={isAiOpen ? 'text-white' : 'text-purple-400'} />
+              <span>Ask AI</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -281,6 +327,58 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
         onClose={() => setIsTerminalOpen(false)}
         onClear={() => setTerminalOutput('')}
       />
+
+      {/* AI Sidebar */}
+      <AiSidebar 
+        isOpen={isAiOpen} 
+        onClose={() => setIsAiOpen(false)} 
+        currentCode={editorInstance?.getValue() || ''}
+      />
+
+      {/* XP System */}
+      <XpNotification currentUserId={user.id} />
+
+      {/* Import Modal */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
+          <div className="bg-[#1e1e1e] border border-zinc-800 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-white">Import Resources</h3>
+                <button onClick={() => setIsImportModalOpen(false)} className="text-zinc-500 hover:text-white transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="space-y-6">
+                {/* GitHub Section */}
+                <div>
+                  <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">From GitHub</label>
+                  <div className="flex space-x-2">
+                    <input 
+                      type="text" 
+                      placeholder="https://github.com/owner/repo"
+                      value={githubUrl}
+                      onChange={(e) => setGithubUrl(e.target.value)}
+                      className="flex-1 bg-[#252526] border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:ring-2 focus:ring-blue-500/50 outline-none"
+                    />
+                    <button 
+                      onClick={handleGitHubImport}
+                      className="bg-blue-600 hover:bg-blue-500 text-white p-2.5 rounded-xl transition-all"
+                    >
+                      <ChevronRight size={20} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="border-t border-zinc-800 pt-6">
+                  <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 italic opacity-50">Dashboard sync coming soon</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
