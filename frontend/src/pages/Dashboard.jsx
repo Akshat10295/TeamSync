@@ -63,7 +63,8 @@ export default function DashboardPage({ session }) {
   }, [currentTeam, currentUserId]);
 
   const handleLogout = async () => { await supabase.auth.signOut(); };
-  const isLeader = currentTeam?.ownerId === currentUserId;
+  const isLeader = currentTeam && String(currentTeam.ownerId) === String(currentUserId);
+  console.log('[Dashboard] Role Check:', { isLeader, teamOwner: currentTeam?.ownerId, currentUser: currentUserId });
 
   // Focus Mode — find the best task and open overlay
   const openFocusMode = useCallback(async () => {

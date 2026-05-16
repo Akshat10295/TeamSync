@@ -117,17 +117,19 @@ export default function AnalyticsPanel({ teamId }) {
                       </div>
                     </div>
                   </div>
-                  <div className="ml-11 w-full h-2 bg-white/5 rounded-full overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${completionPct}%` }}
-                      transition={{ type: 'spring', damping: 15, delay: 0.3 + i * 0.05 }}
-                      className={`h-full rounded-full ${
-                        completionPct >= 70 ? 'bg-gradient-to-r from-green-500 to-emerald-400' :
-                        completionPct >= 40 ? 'bg-gradient-to-r from-yellow-500 to-amber-400' :
-                        'bg-gradient-to-r from-red-500 to-orange-400'
-                      }`}
-                    />
+                  <div className="pl-11 pr-2 mt-1">
+                    <div className="h-2 bg-white/5 rounded-full overflow-hidden w-full">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${completionPct}%` }}
+                        transition={{ type: 'spring', damping: 15, delay: 0.3 + i * 0.05 }}
+                        className={`h-full rounded-full ${
+                          completionPct >= 70 ? 'bg-gradient-to-r from-green-500 to-emerald-400' :
+                          completionPct >= 40 ? 'bg-gradient-to-r from-yellow-500 to-amber-400' :
+                          'bg-gradient-to-r from-red-500 to-orange-400'
+                        }`}
+                      />
+                    </div>
                   </div>
                 </motion.div>
               );

@@ -7,12 +7,23 @@ const setupRoutes = require('./routes/api');
 const { supabase, supabaseAdmin } = require('./utils/supabase');
 
 require('dotenv').config();
+const { initializeImages } = require('./utils/executionEngine');
+
+// Pre-pull Docker images for execution engine
+initializeImages();
 
 const app = express();
 const server = http.createServer(app);
 
 // 1. Setup Socket.io (Existing collaboration/chat logic)
 const io = new Server(server, { cors: { origin: '*' } });
+
+// Setup Redis Adapter for horizontal scaling (Phase 6 Distributed Sync)
+const { createAdapter } = require('@socket.io/redis-adapter');
+const { Redis } = require('ioredis');
+const pubClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+const subClient = pubClient.duplicate();
+io.adapter(createAdapter(pubClient, subClient));
 
 // 2. Setup standard WebSocket server for Yjs
 const wss = new WebSocket.Server({ noServer: true });

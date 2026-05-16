@@ -26,7 +26,6 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
   const [activeUsers, setActiveUsers] = useState([]);
 
   const [editorInstance, setEditorInstance] = useState(null);
-  const [terminalOutput, setTerminalOutput] = useState('Welcome to TeamSync Terminal v1.0\r\n\r\n');
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
 
@@ -190,7 +189,6 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
     
     setIsTerminalOpen(true);
     setIsExecuting(true);
-    setTerminalOutput(`Starting ${language} execution...\n`);
     
     socket.emit('run-code', { 
       projectId, 
@@ -214,23 +212,14 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
   };
 
   useEffect(() => {
-    const handleOutput = (data) => {
-      console.log(`[IDE] 📥 Received code-output:`, data);
-      setIsTerminalOpen(true); // Force open
-      setTerminalOutput(prev => prev + data);
-    };
-
     const handleExit = (code) => {
       console.log(`[IDE] 🏁 Process exited:`, code);
       setIsExecuting(false);
-      setTerminalOutput(prev => prev + `\n[Process exited with code ${code}]\n`);
     };
 
-    socket.on('code-output', handleOutput);
     socket.on('code-exit', handleExit);
 
     return () => {
-      socket.off('code-output', handleOutput);
       socket.off('code-exit', handleExit);
     };
   }, []);
@@ -289,6 +278,15 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
               <Sparkles size={12} className={isAiOpen ? 'text-white' : 'text-purple-400'} />
               <span>Ask AI</span>
             </button>
+            <button 
+              onClick={() => setIsTerminalOpen(!isTerminalOpen)}
+              className={`flex items-center space-x-2 px-3 py-1.5 rounded-md transition-all font-bold text-[10px] uppercase tracking-wider shadow-lg ${
+                isTerminalOpen ? 'bg-zinc-700 text-white' : 'bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--border-hover)]'
+              }`}
+            >
+              <TerminalIcon size={12} className="text-zinc-400" />
+              <span>Terminal</span>
+            </button>
           </div>
         </div>
       </div>
@@ -324,10 +322,8 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
       {/* Terminal */}
       <Terminal 
         isOpen={isTerminalOpen}
-        output={terminalOutput}
-        isExecuting={isExecuting}
         onClose={() => setIsTerminalOpen(false)}
-        onClear={() => setTerminalOutput('')}
+        teamId={projectId}
       />
 
       {/* AI Sidebar */}

@@ -1,39 +1,34 @@
 const Docker = require('dockerode');
-const tmp = require('tmp');
-const fs = require('fs');
 const path = require('path');
+const fs = require('fs');
+const tar = require('tar-stream');
 
-// Initialize Docker
-// On Windows, use the named pipe
 const isWindows = process.platform === 'win32';
 const docker = new Docker(isWindows ? { socketPath: '//./pipe/docker_engine' } : { socketPath: '/var/run/docker.sock' });
 
 const CONFIG = {
   python: {
     image: 'python:3.10-slim',
-    command: (file) => ['python', file],
-    extension: '.py'
+    extension: '.py',
+    command: (file) => ['python', file]
   },
   javascript: {
     image: 'node:18-slim',
-    command: (file) => ['node', file],
-    extension: '.js'
+    extension: '.js',
+    command: (file) => ['node', file]
   },
   cpp: {
-    image: 'gcc:12.2',
-    command: (file) => ['sh', '-c', `g++ ${file} -o /tmp/main.out && /tmp/main.out`],
-    extension: '.cpp'
+    image: 'gcc:latest',
+    extension: '.cpp',
+    command: (file) => ['sh', '-c', `g++ ${file} -o /tmp/app && /tmp/app`]
   },
   java: {
-    image: 'eclipse-temurin:17-jdk-jammy',
-    command: (file) => ['sh', '-c', `javac ${file} && java -cp /tmp Main`],
-    extension: '.java'
+    image: 'amazoncorretto:17',
+    extension: '.java',
+    command: (file) => ['sh', '-c', `javac ${file} && java -cp /tmp Main`]
   }
 };
 
-/**
- * Executes code in a Docker container and streams output
- */
 async function executeCode(language, code, onOutput, onExit) {
   const config = CONFIG[language];
   if (!config) {
@@ -42,89 +37,69 @@ async function executeCode(language, code, onOutput, onExit) {
     return;
   }
 
-  // Use a fixed filename within a temp directory for better compatibility (e.g. Java class name)
-  const tmpDir = tmp.dirSync({ unsafeCleanup: true });
   const fixedFileName = language === 'java' ? 'Main.java' : `solution${config.extension}`;
-  const filePath = path.join(tmpDir.name, fixedFileName);
-  
-  fs.writeFileSync(filePath, code);
-  const dirName = tmpDir.name;
-  const fileName = fixedFileName;
 
   try {
-    // Check if image exists, pull if not
-    const images = await docker.listImages({ filters: { reference: [config.image] } });
-    if (images.length === 0) {
-      onOutput(`Image ${config.image} not found. Pulling... (this may take a minute)\r\n`);
-      await new Promise((resolve, reject) => {
-        docker.pull(config.image, (err, stream) => {
-          if (err) return reject(err);
-          docker.modem.followProgress(stream, (err, res) => err ? reject(err) : resolve(res));
-        });
-      });
-      onOutput(`Successfully pulled ${config.image}.\r\n`);
-    }
-
-    // Create and start container
+    // 1. Create the container (Blazing fast startup)
     const container = await docker.createContainer({
       Image: config.image,
-      Cmd: config.command(`/tmp/${fileName}`),
+      Cmd: config.command(`/tmp/${fixedFileName}`),
       HostConfig: {
-        Binds: [`${dirName}:/tmp:rw`], // Mount temp dir as read-write for compilation
-        Memory: 128 * 1024 * 1024, // 128MB limit
-        CpuPeriod: 100000,
-        CpuQuota: 50000, // 0.5 CPU limit
-        NetworkMode: 'none', // No network access
-        AutoRemove: true // Remove container after exit
+        Memory: 128 * 1024 * 1024,
+        CpuQuota: 50000,
+        NetworkMode: 'none',
       },
-      WorkingDir: '/tmp',
-      Tty: true // Enable TTY for better output formatting
+      Tty: true
     });
 
-    // Attach to the container's streams before starting it (if possible) or right after
+    // 2. Prepare the code as a tar stream
+    const pack = tar.pack();
+    pack.entry({ name: fixedFileName }, code);
+    pack.finalize();
+
+    // 3. Inject the code into the container's /tmp folder
+    await container.putArchive(pack, { path: '/tmp' });
+
+    // 4. Attach to output
     const stream = await container.attach({
       stream: true,
       stdout: true,
       stderr: true
     });
 
-    console.log(`[ExecutionEngine] Attached to container ${container.id}`);
+    stream.on('data', (chunk) => onOutput(chunk.toString()));
 
-    // Stream output back
-    stream.on('data', (chunk) => {
-      const text = chunk.toString();
-      console.log(`[ExecutionEngine] Output: ${text}`);
-      onOutput(text);
-    });
-
+    // 5. Start and wait
     await container.start();
-    console.log(`[ExecutionEngine] Container started`);
-
-    // Handle timeout
-    const timeout = setTimeout(async () => {
-      try {
-        await container.stop();
-        onOutput('\r\n[Execution Timeout: 10 seconds exceeded]\r\n');
-      } catch (e) {
-        // Container might already be gone
-      }
-    }, 10000);
-
-    // Wait for container to exit
-    const result = await container.wait();
-    clearTimeout(timeout);
     
+    const result = await container.wait();
     onExit(result.StatusCode);
+
+    // 6. Cleanup
+    await container.remove().catch(() => {});
   } catch (error) {
     console.error('[ExecutionEngine] Error:', error);
-    onOutput(`Error initializing execution environment: ${error.message}\r\n`);
+    onOutput(`Error: ${error.message}\r\n`);
     onExit(1);
-  } finally {
-    // Cleanup temp directory
+  }
+}
+
+async function initializeImages() {
+  console.log('[ExecutionEngine] 🚀 Pre-pulling images...');
+  const images = [...new Set(Object.values(CONFIG).map(c => c.image)), 'alpine:latest'];
+  for (const image of images) {
     try {
-      tmpDir.removeCallback();
+      const existing = await docker.listImages({ filters: { reference: [image] } });
+      if (existing.length === 0) {
+        await new Promise((resolve, reject) => {
+          docker.pull(image, (err, stream) => {
+            if (err) return reject(err);
+            docker.modem.followProgress(stream, (err, res) => err ? reject(err) : resolve(res));
+          });
+        });
+      }
     } catch (e) {}
   }
 }
 
-module.exports = { executeCode };
+module.exports = { executeCode, initializeImages };

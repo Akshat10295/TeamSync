@@ -23,6 +23,8 @@ const {
 } = require('../utils/githubService');
 
 const { askAI } = require('../utils/aiService');
+const cache = require('../utils/redis');
+const { createTerminalSession, handleInput, closeSession } = require('../utils/terminalService');
 
 /* const app = express(); */
 /* const server = ... */
@@ -326,7 +328,17 @@ app.get('/join/:code', async (req, res) => {
 
 // ─── Teams ───────────────────────────────────────────────────────────────────
 app.get('/api/teams', auth, async (req, res) => {
-  // Get team IDs for this user
+  const mapTeam = (team, members = []) => ({
+    id: team.id,
+    name: team.name,
+    description: team.description,
+    inviteCode: team.invite_code || team.inviteCode,
+    ownerId: team.owner_id || team.ownerId,
+    githubRepo: team.github_repo || team.githubRepo || null,
+    members: members,
+    createdAt: team.created_at || team.createdAt
+  });
+
   const { data: memberships } = await supabase
     .from('team_members')
     .select('team_id')
@@ -335,8 +347,6 @@ app.get('/api/teams', auth, async (req, res) => {
   if (!memberships || !memberships.length) return res.json([]);
 
   const teamIds = memberships.map(m => m.team_id);
-
-  // Get teams
   const { data: teams } = await supabase
     .from('teams')
     .select('*')
@@ -344,30 +354,27 @@ app.get('/api/teams', auth, async (req, res) => {
 
   if (!teams) return res.json([]);
 
-  // Get members for each team
   const result = await Promise.all(teams.map(async (team) => {
+    const cacheKey = `team:${team.id}:members`;
+    const cachedMembers = await cache.get(cacheKey);
+    
+    if (cachedMembers) {
+      return mapTeam(team, cachedMembers);
+    }
+
     const { data: members } = await supabase
       .from('team_members')
       .select('user_id')
       .eq('team_id', team.id);
 
     const memberIds = (members || []).map(m => m.user_id);
-
     const { data: profiles } = await supabase
       .from('profiles')
       .select('id, name, avatar')
       .in('id', memberIds);
 
-    return {
-      id: team.id,
-      name: team.name,
-      description: team.description,
-      inviteCode: team.invite_code,
-      ownerId: team.owner_id,
-      githubRepo: team.github_repo || null,
-      members: profiles || [],
-      createdAt: team.created_at
-    };
+    await cache.set(cacheKey, profiles || [], 300);
+    return mapTeam(team, profiles || []);
   }));
 
   res.json(result);
@@ -424,6 +431,8 @@ app.post('/api/teams/join', auth, async (req, res) => {
     .from('team_members')
     .upsert({ team_id: team.id, user_id: req.user.id }, { onConflict: 'team_id,user_id' });
 
+  await cache.del(`team:${team.id}:members`);
+
   const result = {
     id: team.id,
     name: team.name,
@@ -442,12 +451,18 @@ app.get('/api/tasks', auth, async (req, res) => {
   const { teamId } = req.query;
 
   if (teamId) {
+    const cacheKey = `tasks:${teamId}`;
+    const cached = await cache.get(cacheKey);
+    if (cached) return res.json(cached);
+
     const { data: tasks } = await supabase
       .from('tasks')
       .select('*')
       .eq('team_id', teamId);
 
-    return res.json((tasks || []).map(mapTask));
+    const result = (tasks || []).map(mapTask);
+    await cache.set(cacheKey, result, 30); // Cache for 30s
+    return res.json(result);
   }
 
   // Get all tasks for user's teams
@@ -521,6 +536,7 @@ app.post('/api/tasks', auth, async (req, res) => {
 
   const result = mapTask(task);
   io.emit('task:created', result);
+  await cache.del(`tasks:${teamId}`);
 
   // Send notification to assignee (if different from creator)
   if (assigneeId && assigneeId !== req.user.id) {
@@ -553,7 +569,7 @@ app.put('/api/tasks/:id', auth, async (req, res) => {
   // Fetch old task to detect status transition to 'done'
   const { data: oldTask } = await supabase
     .from('tasks')
-    .select('status, assignee_id')
+    .select('status, assignee_id, team_id')
     .eq('id', req.params.id)
     .single();
 
@@ -575,10 +591,12 @@ app.put('/api/tasks/:id', auth, async (req, res) => {
 
   const result = mapTask(task);
   io.emit('task:updated', result);
+  await cache.del(`tasks:${task.team_id}`);
   res.json(result);
 });
 
 app.delete('/api/tasks/:id', auth, async (req, res) => {
+  const { data: task } = await supabase.from('tasks').select('team_id').eq('id', req.params.id).single();
   const { error } = await supabase
     .from('tasks')
     .delete()
@@ -587,6 +605,7 @@ app.delete('/api/tasks/:id', auth, async (req, res) => {
   if (error) return res.status(404).json({ error: 'Not found' });
 
   io.emit('task:deleted', req.params.id);
+  if (task?.team_id) await cache.del(`tasks:${task.team_id}`);
   res.json({ success: true });
 });
 
@@ -664,6 +683,7 @@ app.post('/api/tasks/:id/timer', auth, async (req, res) => {
 
     const result = mapTask(updated);
     io.emit('task:updated', result);
+    await cache.del(`tasks:${updated.team_id}`);
     res.json(result);
   } catch (err) {
     console.error('[Timer] Critical Error:', err);
@@ -1578,6 +1598,10 @@ app.get('/api/search', auth, async (req, res) => {
 // ─── Team Members with Roles ─────────────────────────────────────────────────
 app.get('/api/teams/:id/members', auth, async (req, res) => {
   const teamId = req.params.id;
+  const cacheKey = `members:${teamId}`;
+  
+  const cached = await cache.get(cacheKey);
+  if (cached) return res.json(cached);
 
   // Get team to find owner
   const { data: team } = await supabase
@@ -1610,6 +1634,7 @@ app.get('/api/teams/:id/members', auth, async (req, res) => {
     role: p.id === team.owner_id ? 'leader' : 'member'
   }));
 
+  await cache.set(cacheKey, result, 60); // Cache for 60s
   res.json(result);
 });
 
@@ -2168,10 +2193,25 @@ io.on('connection', (socket) => {
 
   socket.on('note:typing', (data) => socket.to(data.teamId).emit('note:typing', data));
 
+  // --- Terminal Handlers (Phase 5) ---
+  socket.on('terminal:join', async ({ teamId }) => {
+    socket.join(`terminal:${teamId}`);
+    try {
+      await createTerminalSession(socket, teamId, io);
+    } catch (e) {
+      socket.emit('terminal:output', `Error creating terminal session: ${e.message}\r\n`);
+    }
+  });
+
+  socket.on('terminal:input', (input) => {
+    handleInput(socket.id, input);
+  });
+
   socket.on('disconnect', () => {
     const userData = onlineUsers.get(socket.id);
     if (userData) {
       onlineUsers.delete(socket.id);
+      closeSession(socket.id);
       // Check if user has other active sockets in the same team
       let stillOnline = false;
       onlineUsers.forEach((val) => {
