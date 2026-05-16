@@ -591,63 +591,89 @@ app.delete('/api/tasks/:id', auth, async (req, res) => {
 });
 
 app.post('/api/tasks/:id/timer', auth, async (req, res) => {
-  const { data: task } = await supabase
-    .from('tasks')
-    .select('*')
-    .eq('id', req.params.id)
-    .single();
+  try {
+    const { data: task } = await supabaseAdmin
+      .from('tasks')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
 
-  if (!task) return res.status(404).json({ error: 'Not found' });
-
-  const { action } = req.body;
-  const updates = {};
-
-  if (action === 'start') {
-    updates.timer_running = true;
-    updates.timer_start = new Date().toISOString();
-    updates.status = 'in progress';
-  } else if (action === 'stop') {
-    let actual = task.actual_time || 0;
-    if (task.timer_start) {
-      const startMs = new Date(task.timer_start).getTime();
-      actual += Math.floor((Date.now() - startMs) / 60000);
+    if (!task) {
+      console.warn('[Timer] Task not found:', req.params.id);
+      return res.status(404).json({ error: 'Task not found' });
     }
-    updates.actual_time = actual;
-    updates.timer_running = false;
-    updates.timer_start = null;
-  } else if (action === 'complete') {
-    let actual = task.actual_time || 0;
-    if (task.timer_start) {
-      const startMs = new Date(task.timer_start).getTime();
-      actual += Math.floor((Date.now() - startMs) / 60000);
+
+    const { action } = req.body;
+    console.log(`[Timer] Action: ${action} for Task: ${req.params.id}`);
+    const updates = {};
+
+    if (action === 'start') {
+      updates.timer_running = true;
+      updates.timer_start = Date.now();
+      updates.status = 'in progress';
+    } else if (action === 'stop') {
+      let actual = task.actual_time || 0;
+      if (task.timer_start) {
+        const startMs = parseInt(task.timer_start);
+        if (!isNaN(startMs)) {
+          actual += Math.floor((Date.now() - startMs) / 60000);
+        }
+      }
+      updates.actual_time = actual;
+      updates.timer_running = false;
+      updates.timer_start = null;
+    } else if (action === 'complete') {
+      let actual = task.actual_time || 0;
+      if (task.timer_start) {
+        const startMs = parseInt(task.timer_start);
+        if (!isNaN(startMs)) {
+          actual += Math.floor((Date.now() - startMs) / 60000);
+        }
+      }
+      updates.actual_time = actual;
+      updates.timer_running = false;
+      updates.timer_start = null;
+      updates.status = 'done';
     }
-    updates.actual_time = actual;
-    updates.timer_running = false;
-    updates.timer_start = null;
-    updates.status = 'done';
+
+    console.log('[Timer] Applying updates:', updates);
+
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from('tasks')
+      .update(updates)
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('[Timer] Update Error:', updateError);
+      return res.status(400).json({ error: updateError.message });
+    }
+
+    if (!updated) {
+      console.error('[Timer] Update returned no data');
+      return res.status(404).json({ error: 'Task update failed - no data returned' });
+    }
+
+    // Award XP when task is completed via timer
+    if (action === 'complete') {
+      const completedBy = updated.assignee_id || req.user.id;
+      await awardXP(completedBy, 25, 'Task completed via timer');
+      await checkAchievements(completedBy, updated);
+    }
+
+    const result = mapTask(updated);
+    io.emit('task:updated', result);
+    res.json(result);
+  } catch (err) {
+    console.error('[Timer] Critical Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  const { data: updated } = await supabase
-    .from('tasks')
-    .update(updates)
-    .eq('id', req.params.id)
-    .select()
-    .single();
-
-  // Award XP when task is completed via timer
-  if (action === 'complete' && updated) {
-    const completedBy = updated.assignee_id || req.user.id;
-    await awardXP(completedBy, 25, 'Task completed via timer');
-    await checkAchievements(completedBy, updated);
-  }
-
-  const result = mapTask(updated);
-  io.emit('task:updated', result);
-  res.json(result);
 });
 
 // Map snake_case DB columns to camelCase for frontend
 function mapTask(t) {
+  if (!t) return null;
   return {
     id: t.id,
     teamId: t.team_id,
@@ -1616,12 +1642,18 @@ app.post('/api/tasks/:id/extend-time', auth, async (req, res) => {
 
   const newEstimate = (task.estimated_time || 0) + parseInt(additionalMinutes);
 
-  const { data: updated } = await supabase
+  const { data: updated, error: updateError } = await supabaseAdmin
     .from('tasks')
     .update({ estimated_time: newEstimate })
     .eq('id', req.params.id)
     .select()
     .single();
+
+  if (updateError) {
+    console.error('[Extension] Update Error:', updateError);
+  }
+
+  if (!updated) return res.status(404).json({ error: 'Failed to update task' });
 
   const result = mapTask(updated);
   io.emit('task:updated', result);

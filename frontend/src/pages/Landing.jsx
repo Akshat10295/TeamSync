@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Users, Zap, Play } from 'lucide-react';
+import { Users, Zap, Play, ArrowRight } from 'lucide-react';
 
 export default function LandingPage({ session }) {
   const navigate = useNavigate();
@@ -9,6 +9,10 @@ export default function LandingPage({ session }) {
   // If user clicks getting started and they are already logged in, the Auth page will handle the session
   // seamlessly with the 'Continue to Dashboard' popup as we built earlier!
   const handleGetStarted = () => {
+    navigate('/login?mode=signup');
+  };
+
+  const handleSignIn = () => {
     navigate('/login');
   };
 
@@ -29,27 +33,29 @@ export default function LandingPage({ session }) {
       </div>
 
       {/* Navigation Bar */}
-      <nav className="relative z-10 max-w-7xl mx-auto px-6 py-6 flex items-center justify-between">
+      <nav className="relative z-10 max-w-6xl mx-auto w-full px-6 py-8 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
             <Users className="w-6 h-6 text-white" />
           </div>
-          <span className="text-xl font-bold tracking-tight">TeamSync</span>
+          <span className="text-2xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">TeamSync</span>
         </div>
-        <div className="flex items-center gap-6">
-          <button 
-            onClick={handleGetStarted}
-            className="text-sm font-medium text-gray-300 hover:text-white transition-colors cursor-pointer"
-          >
-            {session ? 'Account' : 'Sign In'}
-          </button>
+        <div className="flex items-center gap-8">
+          {!session && (
+            <button 
+              onClick={handleSignIn}
+              className="text-sm font-medium text-gray-400 hover:text-white transition-colors cursor-pointer"
+            >
+              Sign In
+            </button>
+          )}
           <motion.button 
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={handleGetStarted}
-            className="text-sm font-semibold bg-gradient-to-r from-purple-500 to-blue-600 px-5 py-2.5 rounded-xl shadow-lg shadow-purple-500/25 cursor-pointer hover:from-purple-400 hover:to-blue-500 transition-all"
+            onClick={session ? () => navigate('/dashboard') : handleGetStarted}
+            className="text-sm font-bold bg-white text-black px-6 py-2.5 rounded-full shadow-xl cursor-pointer hover:bg-gray-200 transition-all"
           >
-            {session ? 'Go to App' : 'Get Started'}
+            {session ? 'Go to Dashboard' : 'Get Started'}
           </motion.button>
         </div>
       </nav>
@@ -68,30 +74,20 @@ export default function LandingPage({ session }) {
             </span>
           </h1>
           
-          <p className="text-gray-400 text-lg md:text-xl max-w-3xl mx-auto leading-relaxed mb-10">
+          <p className="text-gray-400 text-lg md:text-xl max-w-2xl mx-auto leading-relaxed mb-12">
             Track work automatically, collaborate in real-time, and never lose data. 
-            The perfect workspace for student projects—online or offline.
+            The perfect workspace for student projects.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+          <div className="flex justify-center">
             <motion.button 
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={handleGetStarted}
-              className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-semibold px-8 py-4 rounded-full shadow-[0_0_30px_rgba(168,85,247,0.3)] transition-all cursor-pointer text-lg"
+              onClick={session ? () => navigate('/dashboard') : handleGetStarted}
+              className="group flex items-center gap-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-bold px-10 py-5 rounded-full shadow-[0_0_50px_rgba(168,85,247,0.4)] transition-all cursor-pointer text-xl"
             >
-              Start Free
-              <Zap className="w-5 h-5" />
-            </motion.button>
-            
-            <motion.button 
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleGetStarted}
-              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold px-8 py-4 rounded-full transition-all cursor-pointer text-lg backdrop-blur-sm"
-            >
-              View Demo
-              <Play className="w-5 h-5 text-purple-400 fill-purple-400" />
+              {session ? 'Launch Dashboard' : 'Get Started for Free'}
+              <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
             </motion.button>
           </div>
         </motion.div>

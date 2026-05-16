@@ -122,17 +122,55 @@ export default function DashboardPage({ session }) {
   }, [currentTeam]);
 
   const handleFocusTimer = useCallback(async (id, action) => {
+    // Optimistic Update for Focus Mode
+    setFocusTask(prev => {
+      if (!prev || prev.id !== id) return prev;
+      if (action === 'start') return { ...prev, timerRunning: true, timerStart: Date.now(), status: 'in progress' };
+      if (action === 'stop' || action === 'complete') return { ...prev, timerRunning: false, timerStart: null, status: action === 'complete' ? 'done' : prev.status };
+      return prev;
+    });
+
     try {
       const updated = await api(`/api/tasks/${id}/timer`, 'POST', { action });
       if (updated && !updated.error) {
         setFocusTask(updated);
-        // Also update in the board/list if needed (optional since we have Socket.io but helps for immediate feedback)
       } else {
         console.error('Timer action failed:', updated?.error);
       }
     } catch (err) {
       console.error('Timer action error:', err);
     }
+  }, []);
+
+  // Team Persistence Logic
+  const handleTeamChange = useCallback((team) => {
+    setCurrentTeam(team);
+    if (team?.id) {
+      localStorage.setItem('teamsync_last_team_id', team.id);
+    }
+  }, []);
+
+  // Team Initialization: Restore from storage/URL or fallback to first team
+  useEffect(() => {
+    const initTeam = async () => {
+      const teams = await api('/api/teams');
+      if (!teams || !Array.isArray(teams) || teams.length === 0) return;
+
+      const savedTeamId = localStorage.getItem('teamsync_last_team_id');
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryTeamId = urlParams.get('teamId');
+      const targetId = queryTeamId || savedTeamId;
+
+      const matched = targetId ? teams.find(t => t.id === targetId) : null;
+      const finalTeam = matched || teams[0];
+      
+      setCurrentTeam(finalTeam);
+      if (finalTeam?.id) {
+        localStorage.setItem('teamsync_last_team_id', finalTeam.id);
+      }
+    };
+
+    initTeam();
   }, []);
 
   const closeFocusMode = () => { setFocusOpen(false); setFocusTask(null); };
@@ -185,7 +223,7 @@ export default function DashboardPage({ session }) {
 
           {/* Team Selector */}
           <div className="mb-4 hidden lg:block">
-            <TeamManager currentTeam={currentTeam} onTeamChange={setCurrentTeam} session={session} />
+            <TeamManager currentTeam={currentTeam} onTeamChange={handleTeamChange} session={session} />
           </div>
 
           {/* Online members — click to view profile */}
@@ -302,7 +340,7 @@ export default function DashboardPage({ session }) {
             <h2 className="text-2xl font-bold mb-2">Welcome to TeamSync!</h2>
             <p className="mb-6 text-center max-w-md" style={{ color: 'var(--text-secondary)' }}>Create a new team or join an existing one to get started.</p>
             <div className="w-full max-w-sm">
-              <TeamManager currentTeam={currentTeam} onTeamChange={setCurrentTeam} session={session} />
+              <TeamManager currentTeam={currentTeam} onTeamChange={handleTeamChange} session={session} />
             </div>
           </motion.div>
         ) : (

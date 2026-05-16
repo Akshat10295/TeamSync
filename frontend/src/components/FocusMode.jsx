@@ -82,14 +82,13 @@ export default function FocusMode({ task, onClose, onTimer }) {
     const tick = () => {
       if (task.deadline || task.dueDate) {
         const dl = task.deadline || task.dueDate;
-        // Only replace T with space for local strings without TZ info
+        // Robust parsing consistent with TaskBoard
         let dateStr = dl;
         if (typeof dl === 'string' && dl.includes('T') && !dl.includes('Z') && !dl.includes('+')) {
           dateStr = dl.replace('T', ' ');
         }
-        const dlTime = new Date(dateStr).getTime();
-        const now = Date.now();
-        const ms = dlTime - now;
+        
+        const ms = new Date(dateStr).getTime() - Date.now();
         
         if (ms <= 0) { 
           setCountdown('Overdue'); 
@@ -110,7 +109,7 @@ export default function FocusMode({ task, onClose, onTimer }) {
       }
       // Session elapsed
       if (task.timerRunning && task.timerStart) {
-        const startMs = typeof task.timerStart === 'string' ? new Date(task.timerStart).getTime() : task.timerStart;
+        const startMs = !isNaN(Number(task.timerStart)) ? Number(task.timerStart) : new Date(task.timerStart).getTime();
         const diff = Math.floor((Date.now() - startMs) / 1000);
         setElapsed(Math.max(0, diff + (task.actualTime || 0) * 60));
       } else {

@@ -17,7 +17,7 @@ const FileItem = ({ item, depth, onSelect, onAdd, onDelete, onRename, activeFile
   return (
     <div className="select-none">
       <div 
-        className={`group flex items-center py-1 px-2 cursor-pointer hover:bg-zinc-800 transition-colors ${isSelected ? 'bg-zinc-800 text-blue-400' : 'text-zinc-400'}`}
+        className={`group flex items-center py-1 px-2 cursor-pointer hover:bg-[var(--border)] transition-colors ${isSelected ? 'bg-[var(--border)] text-blue-400' : 'text-[var(--text-secondary)]'}`}
         style={{ paddingLeft: `${depth * 12 + 12}px` }}
         onClick={toggleOpen}
       >
@@ -110,7 +110,7 @@ const GithubItem = ({ item, depth, owner, repo, onImportGithub }) => {
   return (
     <div className="select-none">
       <div 
-        className="group flex items-center py-1.5 px-4 hover:bg-zinc-800/50 transition-colors cursor-pointer"
+        className="group flex items-center py-1.5 px-4 hover:bg-[var(--border)] transition-colors cursor-pointer"
         style={{ paddingLeft: `${depth * 12 + 16}px` }}
         onClick={toggleOpen}
       >
@@ -242,7 +242,7 @@ export default function FileExplorer({ files, onSelect, onAdd, onDelete, onRenam
       </div>
 
       {/* Dashboard Resources Section */}
-      <div className="mt-2 border-t border-zinc-800 pt-4">
+      <div className="mt-2 border-t border-[var(--ide-border)] pt-4">
         <div 
           onClick={() => setIsDashOpen(!isDashOpen)}
           className="px-4 py-1 flex items-center justify-between group cursor-pointer hover:bg-white/5 transition-colors"
@@ -288,7 +288,7 @@ export default function FileExplorer({ files, onSelect, onAdd, onDelete, onRenam
       </div>
 
       {/* GitHub Repository Section */}
-      <div className="mt-2 border-t border-zinc-800 pt-4 pb-10">
+      <div className="mt-2 border-t border-[var(--ide-border)] pt-4 pb-10">
         <div 
           onClick={() => setIsGithubOpen(!isGithubOpen)}
           className="px-4 py-1 flex items-center justify-between group cursor-pointer hover:bg-white/5 transition-colors"

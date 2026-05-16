@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import { BarChart3, CheckCircle, Clock, AlertTriangle, Users, TrendingUp, Zap } from 'lucide-react';
 import { api } from '../lib/api';
 
+import { Skeleton } from './Skeleton';
+
 export default function AnalyticsPanel({ teamId }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -10,6 +12,7 @@ export default function AnalyticsPanel({ teamId }) {
   useEffect(() => {
     const fetchData = async () => {
       if (!teamId) return;
+      setLoading(true);
       const data = await api(`/api/analytics?teamId=${teamId}`);
       if (data) setStats(data);
       setLoading(false);
@@ -17,7 +20,18 @@ export default function AnalyticsPanel({ teamId }) {
     fetchData();
   }, [teamId]);
 
-  if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" /></div>;
+  if (loading) return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-24 rounded-2xl" />)}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Skeleton className="h-32 rounded-2xl" />
+        <Skeleton className="h-32 rounded-2xl" />
+      </div>
+      <Skeleton className="h-64 rounded-2xl" />
+    </div>
+  );
   if (!stats) return <p className="text-center text-gray-500 py-8">No analytics data</p>;
 
   const missedRate = stats.total > 0 ? Math.round(((stats.total - stats.done - stats.inProgress - stats.planned) / stats.total) * 100) : 0;

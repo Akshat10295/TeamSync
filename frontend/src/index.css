@@ -14,6 +14,11 @@
   --glass-bg: rgba(255, 255, 255, 0.03);
   --glass-border: rgba(255, 255, 255, 0.08);
   --input-bg: rgba(255, 255, 255, 0.05);
+  --ide-bg: #0d0c13;
+  --ide-sidebar: #181818;
+  --ide-editor: #1e1e1e;
+  --ide-header: #181818;
+  --ide-border: #27272a;
   color-scheme: dark;
 }
 
@@ -30,7 +35,40 @@
   --glass-bg: rgba(255, 255, 255, 0.8);
   --glass-border: rgba(0, 0, 0, 0.08);
   --input-bg: rgba(0, 0, 0, 0.04);
+  --ide-bg: #f3f4f6;
+  --ide-sidebar: #ffffff;
+  --ide-editor: #ffffff;
+  --ide-header: #ffffff;
+  --ide-border: #e5e7eb;
   color-scheme: light;
+}
+
+/* Skeleton Loading Shimmer */
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-primary) 25%, var(--input-bg) 50%, var(--bg-primary) 75%);
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite linear;
+  border-radius: 0.5rem;
+}
+
+.skeleton-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 1.5rem;
+  overflow: hidden;
+}
+
+.skeleton-shimmer {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 25%, rgba(255, 255, 255, 0.03) 50%, transparent 75%);
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite linear;
 }
 
 body {

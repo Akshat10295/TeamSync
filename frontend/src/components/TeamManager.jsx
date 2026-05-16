@@ -19,9 +19,6 @@ export default function TeamManager({ currentTeam, onTeamChange, session }) {
     const data = await api('/api/teams');
     if (data && Array.isArray(data)) {
       setTeams(data);
-      if (!currentTeam && data.length > 0) {
-        onTeamChange(data[0]);
-      }
     }
   };
 

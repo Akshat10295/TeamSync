@@ -15,9 +15,9 @@ export default function Terminal({ output, isOpen, onClose, onClear, isExecuting
   if (!isOpen) return null;
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 h-64 bg-[#0c0c0c] border-t-2 border-zinc-700 text-zinc-300 font-mono text-sm shadow-2xl z-[100] flex flex-col">
+    <div className="absolute bottom-0 left-0 right-0 h-64 bg-[var(--ide-bg)] border-t-2 border-[var(--ide-border)] text-[var(--text-primary)] font-mono text-sm shadow-2xl z-[100] flex flex-col">
       {/* Terminal Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-[#1a1a1a] border-b border-zinc-800/50">
+      <div className="flex items-center justify-between px-4 py-2 bg-[var(--ide-header)] border-b border-[var(--ide-border)]">
         <div className="flex items-center space-x-2">
           <TerminalIcon size={14} className={isExecuting ? "text-green-400 animate-pulse" : "text-zinc-500"} />
           <span className="text-xs font-semibold tracking-wider uppercase text-zinc-400">Terminal</span>
@@ -49,7 +49,7 @@ export default function Terminal({ output, isOpen, onClose, onClear, isExecuting
       {/* Terminal Content */}
       <div 
         ref={scrollRef}
-        className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-[#0c0c0c]"
+        className="flex-1 p-4 overflow-y-auto custom-scrollbar bg-[var(--ide-editor)]"
         style={{ 
           scrollBehavior: 'smooth'
         }}
@@ -57,7 +57,7 @@ export default function Terminal({ output, isOpen, onClose, onClear, isExecuting
         {!output ? (
           <div className="text-zinc-600 italic select-none text-xs">No output to display. Run some code to see results.</div>
         ) : (
-          <pre className="whitespace-pre-wrap break-all leading-relaxed text-zinc-100 text-xs selection:bg-zinc-700">
+          <pre className="whitespace-pre-wrap break-all leading-relaxed text-[var(--text-primary)] text-xs selection:bg-zinc-700">
             {output}
             {isExecuting && (
               <span className="inline-block w-2 h-4 bg-green-500 animate-pulse ml-1 align-middle" />

@@ -7,7 +7,10 @@ import { supabase } from '../lib/supabase';
 export default function AuthPage({ session: propSession }) {
   const navigate = useNavigate();
   const [session, setSession] = useState(propSession || null);
-  const [isLogin, setIsLogin] = useState(true);
+  const [isLogin, setIsLogin] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('mode') !== 'signup';
+  });
   const [showVerify, setShowVerify] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

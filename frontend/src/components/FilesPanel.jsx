@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Download, Trash2, Link, X, CloudUpload, FileEdit, Upload, AlertCircle } from 'lucide-react';
 import { api, apiUpload } from '../lib/api';
 import socket from '../lib/socket';
+import { Skeleton } from './Skeleton';
 
 const FILE_ICONS = {
   pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', ppt: '📽️', pptx: '📽️',
@@ -12,7 +13,6 @@ const FILE_ICONS = {
 };
 function getFileIcon(name) { const ext = name?.split('.').pop()?.toLowerCase(); return FILE_ICONS[ext] || '📎'; }
 
-// Extract name without extension and the extension separately
 function splitFileName(name) {
   if (!name) return { base: '', ext: '' };
   const lastDot = name.lastIndexOf('.');
@@ -28,14 +28,12 @@ export default function FilesPanel({ teamId }) {
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
 
-  // Rename modal state
-  const [pendingFile, setPendingFile] = useState(null);       // File object from input
-  const [pendingUrl, setPendingUrl] = useState('');            // URL for import
+  const [pendingFile, setPendingFile] = useState(null);
+  const [pendingUrl, setPendingUrl] = useState('');
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [customName, setCustomName] = useState('');
   const [fileExt, setFileExt] = useState('');
 
-  // URL import modal state
   const [showUrlModal, setShowUrlModal] = useState(false);
   const [importUrl, setImportUrl] = useState('');
   const [importUrlName, setImportUrlName] = useState('');
@@ -47,7 +45,10 @@ export default function FilesPanel({ teamId }) {
     setLoading(false);
   }, [teamId]);
 
-  useEffect(() => { fetchFiles(); }, [fetchFiles]);
+  useEffect(() => { 
+    setLoading(true);
+    fetchFiles(); 
+  }, [fetchFiles]);
 
   useEffect(() => {
     const handleUploaded = (file) => {
@@ -64,7 +65,6 @@ export default function FilesPanel({ teamId }) {
     return () => { socket.off('file:uploaded', handleUploaded); socket.off('file:deleted', handleDeleted); };
   }, [teamId]);
 
-  // ── File selected from device → open rename modal ──
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -74,7 +74,6 @@ export default function FilesPanel({ teamId }) {
     setCustomName(base);
     setFileExt(ext);
     setShowRenameModal(true);
-    // Reset input so the same file can be re-selected
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -91,27 +90,22 @@ export default function FilesPanel({ teamId }) {
     setShowRenameModal(true);
   };
 
-  // ── Confirm upload with custom name ──
   const confirmUpload = async () => {
     if (!customName.trim()) return;
     setUploading(true);
     setError('');
     setShowRenameModal(false);
-
     const finalName = customName.trim().substring(0, 80);
-
     try {
       if (pendingFile) {
-        // Device file upload
         const formData = new FormData();
         formData.append('teamId', teamId);
         formData.append('customName', finalName);
-        formData.append('file', pendingFile); // File must be appended last for multer to parse fields correctly
+        formData.append('file', pendingFile);
         const result = await apiUpload('/api/files/upload', formData);
         if (result?.error) setError(result.error);
         else await fetchFiles();
       } else if (pendingUrl) {
-        // URL import
         const result = await api('/api/files/import-url', 'POST', {
           url: pendingUrl,
           teamId,
@@ -120,10 +114,7 @@ export default function FilesPanel({ teamId }) {
         if (result?.error) setError(result.error);
         else await fetchFiles();
       }
-    } catch (e) {
-      setError('Upload failed');
-    }
-
+    } catch (e) { setError('Upload failed'); }
     setPendingFile(null);
     setPendingUrl('');
     setCustomName('');
@@ -139,7 +130,6 @@ export default function FilesPanel({ teamId }) {
     setFileExt('');
   };
 
-  // ── URL Import → extract name → open rename modal ──
   const handleUrlSubmit = (e) => {
     e.preventDefault();
     if (!importUrl.trim()) return;
@@ -166,7 +156,23 @@ export default function FilesPanel({ teamId }) {
     setFiles(prev => prev.filter(f => f.id !== id));
   };
 
-  if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" /></div>;
+  if (loading) return (
+    <div className="space-y-4">
+      <Skeleton className="h-32 rounded-2xl" />
+      <Skeleton className="h-10 w-40 rounded-xl" />
+      <div className="space-y-2">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.03] border border-white/5">
+            <Skeleton className="h-8 w-8 rounded-lg" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-1/3 rounded" />
+              <Skeleton className="h-2 w-1/4 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -177,7 +183,6 @@ export default function FilesPanel({ teamId }) {
         </div>
       )}
 
-      {/* Upload Zone */}
       <div
         onDragOver={e => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
@@ -202,7 +207,6 @@ export default function FilesPanel({ teamId }) {
         )}
       </div>
 
-      {/* Actions */}
       <div className="flex gap-2">
         <button onClick={() => setShowUrlModal(true)}
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-sm transition-all cursor-pointer">
@@ -210,7 +214,6 @@ export default function FilesPanel({ teamId }) {
         </button>
       </div>
 
-      {/* File List */}
       <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
         <AnimatePresence>
           {files.map((file, i) => (
@@ -235,7 +238,6 @@ export default function FilesPanel({ teamId }) {
         {files.length === 0 && <p className="text-center text-gray-600 text-sm py-8">No files uploaded yet</p>}
       </div>
 
-      {/* ═══ Rename Before Upload Modal ═══ */}
       <AnimatePresence>
         {showRenameModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -247,64 +249,35 @@ export default function FilesPanel({ teamId }) {
                   <div className="w-10 h-10 rounded-xl bg-purple-500/15 flex items-center justify-center">
                     <FileEdit className="w-5 h-5 text-purple-400" />
                   </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-white">Name Your File</h3>
-                    <p className="text-xs text-gray-500">Rename before uploading</p>
-                  </div>
+                  <div><h3 className="text-lg font-bold text-white">Name Your File</h3><p className="text-xs text-gray-500">Rename before uploading</p></div>
                 </div>
                 <button onClick={cancelUpload} className="text-gray-400 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
-
-              {/* Preview */}
               <div className="bg-white/5 rounded-xl p-4 mb-4 flex items-center gap-3">
                 <span className="text-3xl">{getFileIcon(customName + fileExt)}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-white font-medium truncate">{customName || 'untitled'}{fileExt}</p>
-                  <p className="text-[10px] text-gray-500">
-                    {pendingFile ? `${(pendingFile.size / 1024).toFixed(1)} KB • from device` : 'from URL'}
-                  </p>
-                </div>
+                <div className="min-w-0 flex-1"><p className="text-sm text-white font-medium truncate">{customName || 'untitled'}{fileExt}</p>
+                <p className="text-[10px] text-gray-500">{pendingFile ? `${(pendingFile.size / 1024).toFixed(1)} KB • from device` : 'from URL'}</p></div>
               </div>
-
-              {/* Name input */}
               <div className="mb-5">
                 <label className="text-xs text-gray-400 mb-1.5 block font-medium">File Name</label>
                 <div className="flex items-center gap-0">
-                  <input
-                    type="text"
-                    value={customName}
-                    onChange={e => setCustomName(e.target.value.substring(0, 80))}
-                    onKeyDown={e => e.key === 'Enter' && confirmUpload()}
-                    placeholder="Enter file name"
-                    autoFocus
-                    maxLength={80}
-                    className="flex-1 bg-white/5 border border-white/10 rounded-l-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                  />
-                  <div className="bg-white/10 border border-white/10 border-l-0 rounded-r-xl py-3 px-3 text-gray-400 text-sm font-mono select-none">
-                    {fileExt || '.*'}
-                  </div>
+                  <input type="text" value={customName} onChange={e => setCustomName(e.target.value.substring(0, 80))} onKeyDown={e => e.key === 'Enter' && confirmUpload()}
+                    placeholder="Enter file name" autoFocus maxLength={80}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-l-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm" />
+                  <div className="bg-white/10 border border-white/10 border-l-0 rounded-r-xl py-3 px-3 text-gray-400 text-sm font-mono select-none">{fileExt || '.*'}</div>
                 </div>
-                <p className="text-[10px] text-gray-600 mt-1.5">{customName.length}/80 characters</p>
               </div>
-
-              {/* Buttons */}
               <div className="flex gap-3">
-                <button onClick={cancelUpload}
-                  className="flex-1 px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-sm font-medium transition-all cursor-pointer">
-                  Cancel
-                </button>
+                <button onClick={cancelUpload} className="flex-1 px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-sm font-medium transition-all cursor-pointer">Cancel</button>
                 <button onClick={confirmUpload} disabled={!customName.trim() || uploading}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white text-sm font-semibold shadow-lg shadow-purple-500/20 transition-all disabled:opacity-50 cursor-pointer">
-                  <Upload className="w-4 h-4" />
-                  {uploading ? 'Uploading...' : 'Upload'}
-                </button>
+                  <Upload className="w-4 h-4" />{uploading ? 'Uploading...' : 'Upload'}</button>
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ═══ Import URL Modal ═══ */}
       <AnimatePresence>
         {showUrlModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -316,15 +289,9 @@ export default function FilesPanel({ teamId }) {
                 <button onClick={() => setShowUrlModal(false)} className="text-gray-400 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
               <form onSubmit={handleUrlSubmit} className="space-y-4">
-                <div>
-                  <label className="text-xs text-gray-400 mb-1 block">File URL</label>
-                  <input type="url" placeholder="https://example.com/file.pdf" value={importUrl} onChange={e => setImportUrl(e.target.value)} required
-                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500" />
-                </div>
-                <button type="submit"
-                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl py-3 font-semibold transition-all cursor-pointer hover:from-purple-500 hover:to-blue-500">
-                  Next: Name File →
-                </button>
+                <input type="url" placeholder="https://example.com/file.pdf" value={importUrl} onChange={e => setImportUrl(e.target.value)} required
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                <button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl py-3 font-semibold transition-all cursor-pointer hover:from-purple-500 hover:to-blue-500">Next: Name File →</button>
               </form>
             </motion.div>
           </motion.div>

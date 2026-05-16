@@ -25,6 +25,9 @@ yarn-error.log*
 yjs-data/
 uploads/
 
+# Scratch
+backend/scratch/
+
 # OS
 .DS_Store
 Thumbs.db

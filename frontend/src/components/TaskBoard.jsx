@@ -3,31 +3,43 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, Clock, Play, Square, CheckCircle, Trash2, Calendar, Timer, MoreVertical, AlertTriangle, Zap, ChevronDown, Star } from 'lucide-react';
 import { api } from '../lib/api';
 import socket from '../lib/socket';
+import { Skeleton, BoardSkeleton } from './Skeleton';
 
 // Urgency helpers
 function getUrgency(deadline) {
   if (!deadline) return { level: 'none', label: '', color: '' };
-  const ms = new Date(deadline).getTime() - Date.now();
+  
+  // Use robust parsing
+  let dateStr = deadline;
+  if (typeof deadline === 'string' && deadline.includes('T') && !deadline.includes('Z') && !deadline.includes('+')) {
+    dateStr = deadline.replace('T', ' ');
+  }
+  
+  const ms = new Date(dateStr).getTime() - Date.now();
   if (ms < 0) return { level: 'missed', label: 'MISSED', color: 'red' };
   if (ms < 4 * 3600000) return { level: 'critical', label: 'Critical', color: 'red' };
   if (ms < 24 * 3600000) return { level: 'warning', label: 'Warning', color: 'yellow' };
   return { level: 'safe', label: 'Safe', color: 'green' };
 }
 
-function formatCountdown(deadline) {
+function formatCountdown(deadline, showSeconds = false) {
   if (!deadline) return '';
-  // Only replace T with space for local input strings (no Z or + indicator)
-  // This prevents breaking perfect ISO strings from the API
   let dateStr = deadline;
   if (typeof deadline === 'string' && deadline.includes('T') && !deadline.includes('Z') && !deadline.includes('+')) {
     dateStr = deadline.replace('T', ' ');
   }
   const ms = new Date(dateStr).getTime() - Date.now();
   if (ms < 0) return 'Overdue';
+  
   const d = Math.floor(ms / 86400000);
   const h = Math.floor((ms % 86400000) / 3600000);
   const m = Math.floor((ms % 3600000) / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+
   if (d > 0) return `${d}d ${h}h`;
+  if (showSeconds) {
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
 }
@@ -118,7 +130,7 @@ function AssigneeSelect({ members, value, onChange, currentUserId }) {
   );
 }
 
-function TaskCard({ task, members, onUpdate, onDelete, onTimer, onFocus, isNextBest }) {
+const TaskCard = React.memo(({ task, members, onUpdate, onDelete, onTimer, onFocus, isNextBest }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [countdown, setCountdown] = useState('');
   const assignee = members.find(m => m.id === task.assigneeId);
@@ -141,7 +153,8 @@ function TaskCard({ task, members, onUpdate, onDelete, onTimer, onFocus, isNextB
 
   const workTime = () => {
     if (!task.timerRunning) return task.actualTime ? `${task.actualTime}m` : null;
-    const elapsed = task.timerStart ? Math.floor((Date.now() - new Date(task.timerStart).getTime()) / 60000) : 0;
+    const startMs = !isNaN(Number(task.timerStart)) ? Number(task.timerStart) : new Date(task.timerStart).getTime();
+    const elapsed = task.timerStart ? Math.floor((Date.now() - startMs) / 60000) : 0;
     return `${(task.actualTime || 0) + elapsed}m`;
   };
 
@@ -151,16 +164,19 @@ function TaskCard({ task, members, onUpdate, onDelete, onTimer, onFocus, isNextB
       initial={{ opacity: 0, y: 10 }} 
       animate={{ opacity: 1, y: 0 }} 
       exit={{ opacity: 0, scale: 0.95 }}
-      onClick={() => onFocus && onFocus(task)}
-      className={`group relative p-4 rounded-2xl bg-white/[0.03] border transition-all hover:bg-white/[0.06] cursor-pointer active:scale-[0.98] ${URGENCY_BORDER[urgency.level]} ${isNextBest ? 'ring-2 ring-purple-500/40' : ''}`}
+      onClick={() => task.status !== 'done' && onFocus && onFocus(task)}
+      className={`group relative p-4 rounded-2xl bg-white/[0.03] border transition-all hover:bg-white/[0.06] ${task.status === 'done' ? 'cursor-default' : 'cursor-pointer active:scale-[0.98]'} ${URGENCY_BORDER[urgency.level]} ${isNextBest ? 'ring-2 ring-purple-500/40' : ''}`}
     >
-      {isNextBest && (
-        <div className="absolute -top-2 -right-2 bg-purple-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg">
-          <Star className="w-3 h-3" /> NEXT
-        </div>
-      )}
+
       <div className="flex justify-between items-start mb-2">
-        <h4 className="text-sm font-semibold text-white pr-6 leading-tight">{task.title}</h4>
+        <h4 className="text-sm font-semibold text-white pr-6 leading-tight flex items-center gap-2 flex-wrap">
+          {task.title}
+          {isNextBest && (
+            <span className="bg-purple-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-tighter shadow-lg shadow-purple-500/20">
+              Next
+            </span>
+          )}
+        </h4>
         <div ref={menuRef} className="relative">
           <button 
             onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }} 
@@ -238,7 +254,7 @@ function TaskCard({ task, members, onUpdate, onDelete, onTimer, onFocus, isNextB
       )}
     </motion.div>
   );
-}
+});
 
 export default function TaskBoard({ teamId, session, onFocus }) {
   const [tasks, setTasks] = useState([]);
@@ -246,6 +262,7 @@ export default function TaskBoard({ teamId, session, onFocus }) {
   const [showCreate, setShowCreate] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', description: '', assigneeId: '', deadline: '' });
   const [loading, setLoading] = useState(true);
+  const [doneLimit, setDoneLimit] = useState(10);
 
   const fetchTasks = useCallback(async () => {
     if (!teamId) return;
@@ -296,9 +313,34 @@ export default function TaskBoard({ teamId, session, onFocus }) {
     setShowCreate(false);
   };
 
-  const updateTask = async (id, updates) => { await api(`/api/tasks/${id}`, 'PUT', updates); };
-  const deleteTask = async (id) => { await api(`/api/tasks/${id}`, 'DELETE'); setTasks(prev => prev.filter(t => t.id !== id)); };
-  const timerAction = async (id, action) => { await api(`/api/tasks/${id}/timer`, 'POST', { action }); };
+  const updateTask = useCallback(async (id, updates) => { 
+    await api(`/api/tasks/${id}`, 'PUT', updates); 
+  }, [teamId]);
+
+  const deleteTask = useCallback(async (id) => { 
+    await api(`/api/tasks/${id}`, 'DELETE'); 
+    setTasks(prev => prev.filter(t => t.id !== id)); 
+  }, [teamId]);
+
+  const timerAction = useCallback(async (id, action) => {
+    // Optimistic Update
+    setTasks(prev => prev.map(t => {
+      if (t.id === id) {
+        if (action === 'start') return { ...t, timerRunning: true, timerStart: Date.now(), status: 'in progress' };
+        if (action === 'stop') return { ...t, timerRunning: false, timerStart: null };
+        if (action === 'complete') return { ...t, timerRunning: false, timerStart: null, status: 'done' };
+      }
+      return t;
+    }));
+
+    try {
+      await api(`/api/tasks/${id}/timer`, 'POST', { action });
+    } catch (err) {
+      fetchTasks();
+      console.error('Timer action failed:', err);
+    }
+  }, [fetchTasks, teamId]);
+
 
   // Sort by newest first
   const sorted = [...tasks].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -321,7 +363,15 @@ export default function TaskBoard({ teamId, session, onFocus }) {
     ? [...tasksWithDl].sort((a, b) => new Date(a.deadline) - new Date(b.deadline))[0].id
     : activeTasks[0]?.id;
 
-  if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" /></div>;
+  if (loading) return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center mb-6">
+        <Skeleton className="h-6 w-32 rounded" />
+        <Skeleton className="h-10 w-28 rounded-xl" />
+      </div>
+      <BoardSkeleton />
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -345,10 +395,20 @@ export default function TaskBoard({ teamId, session, onFocus }) {
               </div>
               <div className="space-y-3 min-h-[100px] max-h-[60vh] overflow-y-auto pr-1">
                 <AnimatePresence>
-                  {colTasks.map(task => (
+                  {(col.key === 'done' ? colTasks.slice(0, doneLimit) : colTasks).map(task => (
                     <TaskCard key={task.id} task={task} members={members} onUpdate={updateTask} onDelete={deleteTask} onTimer={timerAction} onFocus={onFocus} isNextBest={task.id === nextBestId} />
                   ))}
                 </AnimatePresence>
+                
+                {col.key === 'done' && colTasks.length > doneLimit && (
+                  <button 
+                    onClick={() => setDoneLimit(prev => prev + 10)}
+                    className="w-full py-2 text-[10px] text-gray-500 hover:text-gray-400 bg-white/5 hover:bg-white/10 rounded-xl transition-all font-bold uppercase tracking-wider cursor-pointer"
+                  >
+                    + Show More ({colTasks.length - doneLimit} remaining)
+                  </button>
+                )}
+
                 {colTasks.length === 0 && (
                   <div className="text-center py-8 text-gray-600 text-xs border border-dashed border-white/5 rounded-2xl">No tasks</div>
                 )}

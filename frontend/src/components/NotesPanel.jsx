@@ -4,6 +4,8 @@ import { Plus, X, Save, Trash2, FileText } from 'lucide-react';
 import { api } from '../lib/api';
 import socket from '../lib/socket';
 
+import { Skeleton } from './Skeleton';
+
 export default function NotesPanel({ teamId }) {
   const [notes, setNotes] = useState([]);
   const [activeNote, setActiveNote] = useState(null);
@@ -14,6 +16,7 @@ export default function NotesPanel({ teamId }) {
 
   const fetchNotes = useCallback(async () => {
     if (!teamId) return;
+    setLoading(true);
     const data = await api(`/api/notes?teamId=${teamId}`);
     if (data && Array.isArray(data)) {
       const filtered = data.filter(n => !n.title?.startsWith('📊 Diagram:'));
@@ -67,7 +70,25 @@ export default function NotesPanel({ teamId }) {
     setActiveNote(null);
   };
 
-  if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" /></div>;
+  if (loading) return (
+    <div className="flex gap-4 h-[calc(100vh-220px)] min-h-[400px]">
+      <div className="w-64 flex-shrink-0 space-y-2">
+        <Skeleton className="h-10 rounded-xl w-full" />
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-2">
+            <Skeleton className="h-4 w-3/4 rounded" />
+            <Skeleton className="h-2 w-1/4 rounded" />
+          </div>
+        ))}
+      </div>
+      <div className="flex-1 glass-panel rounded-2xl p-6 space-y-4">
+        <Skeleton className="h-8 w-1/3 rounded" />
+        <Skeleton className="h-4 w-full rounded" />
+        <Skeleton className="h-4 w-full rounded" />
+        <Skeleton className="h-4 w-2/3 rounded" />
+      </div>
+    </div>
+  );
 
   return (
     <div className="flex gap-4 h-[calc(100vh-220px)] min-h-[400px]">

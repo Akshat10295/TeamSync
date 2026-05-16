@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   assignee_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
   estimated_time INTEGER DEFAULT 60,
   actual_time INTEGER DEFAULT 0,
-  due_date DATE,
+  due_date TIMESTAMPTZ,
   timer_running BOOLEAN DEFAULT false,
   timer_start BIGINT,
   created_at TIMESTAMPTZ DEFAULT now()

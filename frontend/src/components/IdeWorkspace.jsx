@@ -15,8 +15,10 @@ import AiSidebar from './AiSidebar';
 import XpNotification from './XpNotification';
 import socket from '../lib/socket';
 import api from '../lib/api';
+import { useTheme } from '../lib/ThemeContext';
 
 export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
+  const { theme } = useTheme();
   const editorRef = useRef(null);
   const providerRef = useRef(null);
   const bindingRef = useRef(null);
@@ -235,9 +237,9 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
 
 
   return (
-    <div className="flex flex-col h-full w-full bg-[#1e1e1e] border-l border-zinc-800">
+    <div className="flex flex-col h-full w-full bg-[var(--ide-editor)] border-l border-[var(--ide-border)]">
       {/* Editor Header / Tabs */}
-      <div className="flex items-center justify-between px-4 py-2 bg-[#252526] border-b border-zinc-800 text-zinc-300">
+      <div className="flex items-center justify-between px-4 py-2 bg-[var(--ide-header)] border-b border-[var(--ide-border)] text-[var(--text-primary)]">
         <div className="flex items-center space-x-2">
           <FileCode2 size={16} className="text-yellow-400" />
           <span className="text-sm font-medium">{fileName}</span>
@@ -281,7 +283,7 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
             <button 
               onClick={() => setIsAiOpen(!isAiOpen)}
               className={`flex items-center space-x-2 px-3 py-1.5 rounded-md transition-all font-bold text-[10px] uppercase tracking-wider shadow-lg ${
-                isAiOpen ? 'bg-purple-600 text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                isAiOpen ? 'bg-purple-600 text-white' : 'bg-[var(--bg-card)] text-[var(--text-secondary)] hover:bg-[var(--border-hover)]'
               }`}
             >
               <Sparkles size={12} className={isAiOpen ? 'text-white' : 'text-purple-400'} />
@@ -296,7 +298,7 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
         <Editor
           height="100%"
           language={getLanguage(fileName)}
-          theme="vs-dark"
+          theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
           onMount={handleEditorDidMount}
           options={{
             minimap: { enabled: true },

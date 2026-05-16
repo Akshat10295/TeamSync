@@ -8,10 +8,12 @@ const { ChevronLeft, Loader2, File, Download, ChevronRight, X, Sparkles } = Icon
 const GitHub = Icons.GitHub || Icons.Github || Icons.Code;
 import { api } from '../lib/api';
 import socket from '../lib/socket';
+import { useTheme } from '../lib/ThemeContext';
 
 export default function IdePage({ session }) {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [user, setUser] = useState(null);
   const [files, setFiles] = useState([]);
   const [activeFile, setActiveFile] = useState(null);
@@ -32,9 +34,9 @@ export default function IdePage({ session }) {
   const [showGitPanel, setShowGitPanel] = useState(false);
 
 
-  const showToast = (message, type = 'success') => {
+  const showToast = (message, type = 'success', duration = 3000) => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), duration);
   };
 
 
@@ -78,6 +80,7 @@ export default function IdePage({ session }) {
 
   useEffect(() => {
     if (projectId) {
+      localStorage.setItem('teamsync_last_team_id', projectId);
       fetchFiles();
 
       // Join project room for real-time file updates
@@ -142,6 +145,20 @@ export default function IdePage({ session }) {
       };
     }
   }, [projectId]);
+
+  // 3. Welcome Notification
+  useEffect(() => {
+    if (!loading && projectData) {
+      const timer = setTimeout(() => {
+        showToast(
+          "🚀 Environment Ready! Supported: Python 3.10, Node.js 18, C++ (GCC 12), Java 17", 
+          "info", 
+          10000
+        );
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, !!projectData]);
 
   // 3. File CRUD operations
   const handleAddFile = async (parentId, type) => {
@@ -290,7 +307,7 @@ export default function IdePage({ session }) {
 
   if (!user || loading) {
     return (
-      <div className="h-screen w-screen bg-[#1e1e1e] flex flex-col items-center justify-center text-white space-y-4">
+      <div className="h-screen w-screen bg-[var(--ide-editor)] flex flex-col items-center justify-center text-[var(--text-primary)] space-y-4">
         <Loader2 className="animate-spin text-blue-500" size={32} />
         <span className="text-sm font-medium animate-pulse text-zinc-400">Loading IDE Environment...</span>
       </div>
@@ -298,12 +315,12 @@ export default function IdePage({ session }) {
   }
 
   return (
-    <div className="h-screen w-screen bg-[#0d0c13] flex flex-col text-white overflow-hidden font-sans relative">
+    <div className="h-screen w-screen bg-[var(--ide-bg)] flex flex-col text-[var(--text-primary)] overflow-hidden font-sans relative">
       {/* Top Navbar */}
-      <div className="h-12 border-b border-zinc-800 bg-[#181818] flex items-center px-4 justify-between shrink-0">
+      <div className="h-12 border-b border-[var(--ide-border)] bg-[var(--ide-header)] flex items-center px-4 justify-between shrink-0">
         <div className="flex items-center space-x-4">
           <button 
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate(`/dashboard?teamId=${projectId}`)}
             className="text-zinc-400 hover:text-white transition-colors flex items-center space-x-1"
           >
             <ChevronLeft size={16} />
@@ -316,6 +333,13 @@ export default function IdePage({ session }) {
         </div>
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-2">
+            <button 
+              onClick={toggleTheme}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-all mr-2"
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              {theme === 'dark' ? <Icons.Sun size={16} /> : <Icons.Moon size={16} />}
+            </button>
             <img src={`https://ui-avatars.com/api/?name=${user.name}&background=random`} alt="Avatar" className="w-6 h-6 rounded-full border border-white/10" />
             <span className="text-xs text-zinc-300">{user.name}</span>
           </div>
@@ -325,7 +349,7 @@ export default function IdePage({ session }) {
       {/* Main IDE Area */}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar - File Explorer */}
-        <div className="w-64 bg-[#181818] border-r border-zinc-800 flex flex-col hidden md:flex shrink-0">
+        <div className="w-64 bg-[var(--ide-sidebar)] border-r border-[var(--ide-border)] flex flex-col hidden md:flex shrink-0">
           <FileExplorer 
             files={files} 
             activeFileId={activeFile?.id}
@@ -344,7 +368,7 @@ export default function IdePage({ session }) {
           />
 
           {/* XP Progress Section */}
-          <div className="p-4 border-t border-zinc-800 bg-[#141414]">
+          <div className="p-4 border-t border-[var(--ide-border)] bg-[var(--ide-bg)] opacity-90">
             <div className="flex items-center justify-between mb-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
               <span className="text-purple-400">Level {user.level || 1}</span>
               <span>{user.xp || 0} XP</span>
@@ -443,13 +467,13 @@ export default function IdePage({ session }) {
               setIsAiOpen={setIsAiOpen}
             />
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-zinc-600 space-y-4 bg-[#1e1e1e]">
-              <div className="w-24 h-24 rounded-full bg-zinc-900/50 flex items-center justify-center">
-                <File size={40} className="text-zinc-800" />
+            <div className="h-full flex flex-col items-center justify-center text-[var(--text-muted)] space-y-4 bg-[var(--ide-editor)]">
+              <div className="w-24 h-24 rounded-full bg-[var(--bg-primary)] opacity-50 flex items-center justify-center">
+                <Icons.File size={40} className="text-[var(--text-muted)]" />
               </div>
               <div className="text-center">
-                <p className="text-sm font-medium">No file open</p>
-                <p className="text-xs text-zinc-700 mt-1">Select or create a file to start coding</p>
+                <p className="text-sm font-medium text-[var(--text-primary)]">No file open</p>
+                <p className="text-xs text-[var(--text-muted)] mt-1">Select or create a file to start coding</p>
               </div>
             </div>
           )}
