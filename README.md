@@ -1,94 +1,63 @@
-# TeamSync 🚀
+# 🚀 TeamSync IDE
 
-Real-Time Collaboration Platform built for Student Teams.
+**TeamSync** is a high-performance, production-ready collaborative IDE built for distributed teams. It features real-time code synchronization, an interactive collaborative terminal, and a sandboxed execution engine—all orchestrated via Docker.
 
-## Tech Stack
+## ✨ Features
 
-- **Frontend** – React 19 (Vite) + Tailwind CSS v4 + Framer Motion
-- **Backend** – Node.js, Express, Socket.io
-- **Database & Auth** – Supabase (PostgreSQL + Auth + Storage)
-- **Real-Time** – Socket.io for instant sync & presence tracking
-- **Gamification** – XP system, leveling, and unlockable achievements
+- **Real-time Collaboration**: Powered by Yjs and Socket.io for low-latency code syncing.
+- **Interactive Collaborative Terminal**: A shared `xterm.js` shell allowing multiple users to run commands in a secure, isolated Alpine Linux environment.
+- **Sandboxed Code Execution**: Support for Python, JavaScript, Java (Amazon Corretto), and C++ with direct container injection for maximum reliability.
+- **Scalable Architecture**: Stateless backend with Redis Pub/Sub for horizontal scaling and Nginx load balancing.
+- **Project Analytics**: Real-time insights into team productivity and task distribution.
+- **GitHub Integration**: Link repositories and browse code directly within the IDE.
 
-## Setup (5 minutes)
+## 🛠️ Technology Stack
 
-### Requirements
-- Node.js v16+ (download from nodejs.org)
-- A [Supabase](https://supabase.com) account & project
+- **Frontend**: React 19, Framer Motion, Lucide, Xterm.js
+- **Backend**: Node.js 20, Socket.io, Express
+- **Database**: Supabase (PostgreSQL + Auth)
+- **Infrastructure**: Redis, Nginx, Docker, Docker Compose
+- **Sandboxing**: Dockerode (Docker API for Node.js)
 
-### Steps
+## 🚀 Quick Start
 
-```bash
-# 1. Install backend dependencies
-cd backend && npm install && cd ..
+### Prerequisites
+- Docker & Docker Desktop
+- Node.js 20+
+- A Supabase Project (URL and Anon Key)
 
-# 2. Install frontend dependencies
-cd frontend && npm install && cd ..
+### Installation
 
-# 3. Environment Configuration
-# Create a .env file in the root directory:
-SUPABASE_URL=your_supabase_project_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Akshat10295/TeamSync.git
+   cd TeamSync
+   ```
 
-# Create a .env file in the /frontend directory:
-VITE_SUPABASE_URL=your_supabase_project_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-VITE_API_URL=http://localhost:3000
+2. **Configure Environment Variables**:
+   Create a `.env` file in the `backend/` directory:
+   ```env
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_KEY=your_supabase_anon_key
+   REDIS_URL=redis://redis:6379
+   ```
 
-# 4. Database Setup
-# Run schema.sql in Supabase SQL Editor (initial setup)
-# Run migration-v2.sql (notifications + GitHub integration)
-# Run migration-v3.sql (cloud storage + gamification)
+3. **Run with Docker Compose**:
+   ```bash
+   docker-compose up --build
+   ```
 
-# 5. Supabase Storage
-# Go to Supabase Dashboard → Storage → Create Bucket
-# Name: team-files  |  Public: false  |  Max size: 50MB
+4. **Access the Application**:
+   - **IDE/Dashboard**: [http://localhost:8080](http://localhost:8080)
+   - **Backend API**: [http://localhost:3000](http://localhost:3000)
 
-# 6. Start the backend
-cd backend
-npm start
+## 🏗️ Architecture
 
-# 7. Start the frontend (in a new terminal)
-cd frontend
-npm run dev
-```
+TeamSync uses a distributed architecture to ensure high availability and performance:
 
-## Features
+- **Nginx (Reverse Proxy)**: Manages incoming traffic and routes it to the frontend or API services.
+- **Redis (Backplane)**: Syncs Socket.io events across multiple API instances, enabling horizontal scaling.
+- **Execution Engine**: Spawns ephemeral, resource-constrained Docker containers for every code run to ensure user isolation and security.
 
-- ✅ **Authentication** – Secure Login / Register and Forgot Password flow via Supabase Auth.
-- 👥 **Teams** – Create teams, invite members via code, manage permissions (Leader/Member).
-- ✅ **Tasks** – Create, assign, track, start/stop timers, and mark complete. Team Leaders can extend task deadlines.
-- 🎮 **Gamification** – XP system, leveling (every 200 XP), and 10 unique achievements with animated pop-up toasts.
-- 📊 **Analytics** – Data visualization of completion rates, task status, and member workload.
-- 📅 **Timeline** – Gantt-style visual task scheduling view.
-- 📝 **Notes** – Collaborative notes with auto-save.
-- ☁️ **Files** – Upload and manage team documents via Supabase Cloud Storage.
-- 🔍 **Search** – Full-text search across tasks and notes.
-- 🔔 **Notifications** – In-app real-time notification panel.
-- 🔗 **GitHub Integration** – Browse team repositories and read files directly from the dashboard.
-- ⚡ **Real-Time** – WebSocket sync + presence indicators powered by Socket.io.
-
-## Project Structure
-
-```
-teamsync/
-├── backend/            # Express + Socket.io backend API
-│   ├── server.js       # Main server file
-│   ├── schema.sql      # Initial database schema
-│   ├── migration-v2.sql# Notifications + GitHub
-│   ├── migration-v3.sql# Cloud storage + Gamification
-│   ├── .env            # Backend environment variables
-│   └── package.json    # Backend dependencies
-├── frontend/           # React 19 (Vite) frontend (previously 'client')
-│   ├── src/
-│   │   ├── components/ # Reusable UI components
-│   │   ├── pages/      # Auth, Dashboard
-│   │   ├── lib/        # API, Supabase, Socket helpers
-│   │   └── main.jsx    # Entry point
-│   └── .env            # Frontend environment variables
-└── README.md           # This file
-```
-
-## Real-Time Testing
-
-Open the app in two different browser tabs (or standard/incognito), log in as two different users in the same team, and watch changes sync instantly between them!
+## 📄 License
+MIT License - Developed by Akshat and the TeamSync Team.
