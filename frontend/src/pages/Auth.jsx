@@ -17,6 +17,9 @@ export default function AuthPage({ session: propSession }) {
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotSuccess, setForgotSuccess] = useState(false);
 
   // Fetch a fresh session on load to ensure it's not stale
   useEffect(() => {
@@ -66,6 +69,35 @@ export default function AuthPage({ session: propSession }) {
       const { data } = await supabase.auth.getSession();
       setSession(data.session);
       
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setForgotSuccess(false);
+
+    try {
+      const port = import.meta.env.VITE_BACKEND_PORT || 3000;
+      const apiUrl = import.meta.env.VITE_VITE_API_URL || import.meta.env.VITE_API_URL || `http://localhost:${port}`;
+      
+      const res = await fetch(`${apiUrl}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to send reset link');
+      }
+
+      setForgotSuccess(true);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -215,6 +247,77 @@ export default function AuthPage({ session: propSession }) {
               {loading ? 'Logging out...' : 'Log Out / Switch User'}
             </motion.button>
           </motion.div>
+        ) : isForgotPassword ? (
+          // --- Forgot Password View ---
+          <>
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div className="text-center mb-4">
+                <h2 className="text-xl font-semibold text-white">Reset Password</h2>
+                <p className="text-xs text-gray-400 mt-1 font-sans">We will send a reset link to your email.</p>
+              </div>
+
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+                <input 
+                  type="email" 
+                  placeholder="Email address"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  required
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all font-sans"
+                />
+              </div>
+
+              {error && (
+                <motion.div 
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  className="text-red-400 text-sm text-center bg-red-400/10 py-2 rounded-lg font-sans"
+                >
+                  {error}
+                </motion.div>
+              )}
+
+              {forgotSuccess && (
+                <motion.div 
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  className="text-green-400 text-sm text-center bg-green-400/10 py-2 rounded-lg font-sans"
+                >
+                  Reset link sent! Please check your email.
+                </motion.div>
+              )}
+
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                type="submit"
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-xl py-3 font-semibold shadow-lg shadow-purple-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer font-sans"
+              >
+                {loading ? (
+                  <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <>
+                    Send Reset Link
+                    <ArrowRight className="w-5 h-5" />
+                  </>
+                )}
+              </motion.button>
+            </form>
+
+            <div className="mt-6 text-center text-sm text-gray-400 font-sans">
+              <button 
+                type="button"
+                onClick={() => {
+                  setIsForgotPassword(false);
+                  setForgotSuccess(false);
+                  setError(null);
+                }}
+                className="text-purple-400 hover:text-purple-300 transition-colors cursor-pointer focus:outline-none"
+              >
+                Back to Sign In
+              </button>
+            </div>
+          </>
         ) : (
           // --- Login / Register Form ---
           <>
@@ -262,9 +365,25 @@ export default function AuthPage({ session: propSession }) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all font-sans"
                 />
               </div>
+
+              {isLogin && (
+                <div className="flex justify-end">
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setIsForgotPassword(true);
+                      setError(null);
+                      setForgotSuccess(false);
+                    }}
+                    className="text-xs text-purple-400 hover:text-purple-300 transition-colors cursor-pointer focus:outline-none font-sans"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+              )}
 
               {error && (
                 <motion.div 

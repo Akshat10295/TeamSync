@@ -11,6 +11,7 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const multer = require('multer');
 const { supabase, supabaseAdmin } = require('../utils/supabase');
+const { createClient } = require('@supabase/supabase-js');
 const { executeCode } = require('../utils/executionEngine');
 const { 
   fetchRepoContent, 
@@ -288,8 +289,15 @@ app.post('/api/auth/forgot-password', rateLimit(60000, 5), async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email is required' });
 
+  // Determine the frontend URL dynamically from Origin/Referer, falling back to port 8080
+  const origin = req.get('Origin') || req.get('Referer') || 'http://localhost:8080';
+  let targetHost = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+  if (targetHost.includes(':3000')) {
+    targetHost = 'http://localhost:8080';
+  }
+
   const { error } = await supabase.auth.resetPasswordForEmail(sanitize(email), {
-    redirectTo: `${req.protocol}://${req.get('host')}/reset-password`
+    redirectTo: `${targetHost}/reset-password`
   });
 
   if (error) return res.status(400).json({ error: error.message });
@@ -297,18 +305,28 @@ app.post('/api/auth/forgot-password', rateLimit(60000, 5), async (req, res) => {
   res.json({ message: 'Password reset email sent! Check your inbox.' });
 });
 
+app.get('/reset-password', (req, res) => {
+  // If the browser visits reset-password on port 3000, redirect it to Nginx port 8080
+  // Standard browser redirect behavior will preserve any URL hash fragments containing access tokens
+  res.redirect('http://localhost:8080/reset-password');
+});
+
 app.post('/api/auth/reset-password', async (req, res) => {
   const { access_token, password } = req.body;
   if (!access_token || !password) return res.status(400).json({ error: 'Token and new password are required' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
-  // Create a temporary client with the user's reset token to update their password
-  const tempClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: `Bearer ${access_token}` } }
-  });
+  // Retrieve user by their access token to verify it
+  const { data: { user }, error: userError } = await supabase.auth.getUser(access_token);
+  if (userError || !user) {
+    return res.status(400).json({ error: userError?.message || 'Invalid or expired token' });
+  }
 
-  const { error } = await tempClient.auth.updateUser({ password });
-  if (error) return res.status(400).json({ error: error.message });
+  // Update password using the service role admin client
+  const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(user.id, { password });
+  if (updateError) {
+    return res.status(400).json({ error: updateError.message });
+  }
 
   res.json({ message: 'Password updated successfully! You can now log in.' });
 });
@@ -1932,8 +1950,55 @@ app.get('/api/user-profile/:userId', auth, async (req, res) => {
     level: profile.level || 1,
     joinedAt: profile.created_at,
     stats: { total: allTasks.length, completed, active, missed },
-    recentActivity: recentCompleted
   });
+});
+
+app.put('/api/user-profile', auth, async (req, res) => {
+  let { name, avatar } = req.body;
+  name = sanitize(name);
+  avatar = sanitize(avatar);
+
+  if (!name) return res.status(400).json({ error: 'Name cannot be empty' });
+  if (avatar && avatar.length > 2) return res.status(400).json({ error: 'Avatar must be maximum 2 characters' });
+
+  try {
+    const { data: updatedProfile, error } = await supabase
+      .from('profiles')
+      .update({ name, avatar })
+      .eq('id', req.user.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Update profile error:', error);
+      return res.status(500).json({ error: 'Failed to update profile' });
+    }
+
+    // Invalidate Redis caches for teams the user is in
+    const { data: memberships } = await supabase
+      .from('team_members')
+      .select('team_id')
+      .eq('user_id', req.user.id);
+
+    if (memberships && memberships.length > 0) {
+      for (const m of memberships) {
+        await cache.del(`team:${m.team_id}:members`);
+      }
+    }
+
+    res.json({
+      id: updatedProfile.id,
+      name: updatedProfile.name,
+      email: updatedProfile.email,
+      avatar: updatedProfile.avatar,
+      xp: updatedProfile.xp_points || 0,
+      level: updatedProfile.level || 1,
+      joinedAt: updatedProfile.created_at
+    });
+  } catch (err) {
+    console.error('Update profile critical error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // ─── Gamification: XP & Achievements ─────────────────────────────────────────

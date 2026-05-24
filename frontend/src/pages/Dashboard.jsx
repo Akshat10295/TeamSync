@@ -34,6 +34,16 @@ export default function DashboardPage({ session }) {
   const [focusOpen, setFocusOpen] = useState(false);
   const currentUserId = session?.user?.id;
   const { theme, toggle: toggleTheme } = useTheme();
+  const [currentUserProfile, setCurrentUserProfile] = useState(null);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    api(`/api/user-profile/${currentUserId}`).then(data => {
+      if (data && !data.error) {
+        setCurrentUserProfile(data);
+      }
+    }).catch(err => console.error('Failed to load current user profile:', err));
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!currentTeam) return;
@@ -328,7 +338,7 @@ export default function DashboardPage({ session }) {
               style={{ background: 'var(--input-bg)', border: '1px solid var(--border)' }}
               title="View Profile"
             >
-              {session?.user?.email?.charAt(0).toUpperCase()}
+              {currentUserProfile?.avatar || session?.user?.email?.charAt(0).toUpperCase()}
             </button>
           </div>
         </header>
@@ -374,7 +384,7 @@ export default function DashboardPage({ session }) {
 
       {/* User Profile Modal */}
       <AnimatePresence>
-        {profileUserId && <UserProfile userId={profileUserId} onClose={() => setProfileUserId(null)} />}
+        {profileUserId && <UserProfile userId={profileUserId} currentUserId={currentUserId} onClose={() => setProfileUserId(null)} />}
       </AnimatePresence>
     </div>
   );

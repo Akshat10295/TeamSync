@@ -7,6 +7,7 @@ import AuthPage from './pages/Auth';
 import DashboardPage from './pages/Dashboard';
 import LandingPage from './pages/Landing';
 import IdePage from './pages/IdePage';
+import ResetPasswordPage from './pages/ResetPassword';
 
 function App() {
   const [session, setSession] = useState(null);
@@ -47,6 +48,10 @@ function App() {
         <Route 
           path="/dashboard" 
           element={session ? <DashboardPage session={session} /> : <Navigate to="/login" replace />} 
+        />
+        <Route 
+          path="/reset-password" 
+          element={<ResetPasswordPage />} 
         />
         <Route 
           path="/" 
