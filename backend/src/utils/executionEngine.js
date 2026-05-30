@@ -29,7 +29,7 @@ const CONFIG = {
   }
 };
 
-async function executeCode(language, code, onOutput, onExit) {
+async function executeCode(language, code, onOutput, onExit, onContainerCreated) {
   const config = CONFIG[language];
   if (!config) {
     onOutput(`Error: Unsupported language: ${language}\r\n`);
@@ -38,10 +38,12 @@ async function executeCode(language, code, onOutput, onExit) {
   }
 
   const fixedFileName = language === 'java' ? 'Main.java' : `solution${config.extension}`;
+  let container = null;
+  let timeoutId = null;
 
   try {
     // 1. Create the container (Blazing fast startup)
-    const container = await docker.createContainer({
+    container = await docker.createContainer({
       Image: config.image,
       Cmd: config.command(`/tmp/${fixedFileName}`),
       HostConfig: {
@@ -51,6 +53,10 @@ async function executeCode(language, code, onOutput, onExit) {
       },
       Tty: true
     });
+
+    if (onContainerCreated) {
+      onContainerCreated(container);
+    }
 
     // 2. Prepare the code as a tar stream
     const pack = tar.pack();
@@ -67,20 +73,55 @@ async function executeCode(language, code, onOutput, onExit) {
       stderr: true
     });
 
-    stream.on('data', (chunk) => onOutput(chunk.toString()));
+    let totalOutputLength = 0;
+    const MAX_OUTPUT_LIMIT = 100 * 1024; // 100 KB limit
+    let killedDueToOutputLimit = false;
+
+    stream.on('data', async (chunk) => {
+      if (killedDueToOutputLimit) return;
+      const str = chunk.toString();
+      totalOutputLength += str.length;
+      if (totalOutputLength > MAX_OUTPUT_LIMIT) {
+        killedDueToOutputLimit = true;
+        const allowedChunk = str.substring(0, MAX_OUTPUT_LIMIT - (totalOutputLength - str.length));
+        if (allowedChunk) onOutput(allowedChunk);
+        onOutput(`\r\n[Execution Engine] Output limit exceeded (limit: ${MAX_OUTPUT_LIMIT / 1024}KB). Terminating...\r\n`);
+        try {
+          await container.kill();
+        } catch (err) {}
+        return;
+      }
+      onOutput(str);
+    });
+
+    // Set a timeout to kill the container if it runs too long
+    const TIMEOUT_LIMIT = 10000; // 10 seconds
+    timeoutId = setTimeout(async () => {
+      try {
+        await container.kill();
+        onOutput(`\r\n[Execution Engine] Time limit exceeded (limit: ${TIMEOUT_LIMIT / 1000}s). Terminating...\r\n`);
+      } catch (err) {
+        // container might have already exited
+      }
+    }, TIMEOUT_LIMIT);
 
     // 5. Start and wait
     await container.start();
     
     const result = await container.wait();
+    if (timeoutId) clearTimeout(timeoutId);
     onExit(result.StatusCode);
 
     // 6. Cleanup
     await container.remove().catch(() => {});
   } catch (error) {
+    if (timeoutId) clearTimeout(timeoutId);
     console.error('[ExecutionEngine] Error:', error);
     onOutput(`Error: ${error.message}\r\n`);
     onExit(1);
+    if (container) {
+      await container.remove().catch(() => {});
+    }
   }
 }
 

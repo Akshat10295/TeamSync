@@ -6,7 +6,7 @@ import { MonacoBinding } from 'y-monaco';
 import * as Icons from 'lucide-react';
 const { 
   FileCode2, Save, Users, Play, Terminal: TerminalIcon, 
-  Sparkles, Download, X, ChevronRight, Globe 
+  Sparkles, Download, X, ChevronRight, Globe, Square 
 } = Icons;
 const GitHub = Icons.GitHub || Icons.Github || Icons.Code;
 
@@ -198,6 +198,11 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
     });
   };
 
+  const handleStopCode = () => {
+    socket.emit('stop-code');
+    setIsExecuting(false);
+  };
+
   const handleGitHubImport = async () => {
     if (!githubUrl.trim()) return;
     try {
@@ -259,16 +264,23 @@ export default function IdeWorkspace({ projectId, user, fileId, fileName }) {
             <span>Auto-saving</span>
           </button>
           <div className="flex items-center space-x-2">
-            <button 
-              onClick={handleRunCode}
-              disabled={isExecuting}
-              className={`flex items-center space-x-2 px-3 py-1.5 rounded-md transition-all font-bold text-[10px] uppercase tracking-wider shadow-lg ${
-                isExecuting ? 'bg-zinc-700 text-zinc-500' : 'bg-green-600 hover:bg-green-500 text-white shadow-green-900/20'
-              }`}
-            >
-              <Play size={12} fill="currentColor" />
-              <span>{isExecuting ? 'Running...' : 'Run Code'}</span>
-            </button>
+            {isExecuting ? (
+              <button 
+                onClick={handleStopCode}
+                className="flex items-center space-x-2 px-3 py-1.5 rounded-md transition-all font-bold text-[10px] uppercase tracking-wider shadow-lg bg-red-600 hover:bg-red-500 text-white shadow-red-900/20"
+              >
+                <Square size={12} fill="currentColor" />
+                <span>Stop Code</span>
+              </button>
+            ) : (
+              <button 
+                onClick={handleRunCode}
+                className="flex items-center space-x-2 px-3 py-1.5 rounded-md transition-all font-bold text-[10px] uppercase tracking-wider shadow-lg bg-green-600 hover:bg-green-500 text-white shadow-green-900/20"
+              >
+                <Play size={12} fill="currentColor" />
+                <span>Run Code</span>
+              </button>
+            )}
             <button 
               onClick={() => setIsAiOpen(!isAiOpen)}
               className={`flex items-center space-x-2 px-3 py-1.5 rounded-md transition-all font-bold text-[10px] uppercase tracking-wider shadow-lg ${

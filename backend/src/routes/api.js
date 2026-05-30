@@ -2201,6 +2201,7 @@ app.get('/api/achievements', auth, async (req, res) => {
 
 // ─── Socket.io (with Presence Tracking) ──────────────────────────────────────
 const onlineUsers = new Map(); // Map<socketId, { userId, teamId }>
+const activeCodeRuns = new Map(); // Map<socketId, container>
 
 io.on('connection', (socket) => {
   socket.on('join:team', ({ teamId, userId }) => {
@@ -2241,18 +2242,36 @@ io.on('connection', (socket) => {
         (exitCode) => {
           console.log(`[Socket] 🏁 Execution finished with code ${exitCode}`);
           socket.emit('code-exit', exitCode);
+          activeCodeRuns.delete(socket.id);
 
           // XP: Award for successful execution
           if (exitCode === 0) {
             const userData = onlineUsers.get(socket.id);
             if (userData) awardXP(userData.userId, 10, `Successfully executed ${language} code`);
           }
+        },
+        (container) => {
+          activeCodeRuns.set(socket.id, container);
         }
       );
     } catch (err) {
       console.error(`[Socket] ❌ Execution Error:`, err);
       socket.emit('code-output', `Execution Error: ${err.message}\r\n`);
       socket.emit('code-exit', 1);
+      activeCodeRuns.delete(socket.id);
+    }
+  });
+
+  socket.on('stop-code', async () => {
+    console.log(`[Socket] 🛑 Received stop-code from socket ${socket.id}`);
+    const container = activeCodeRuns.get(socket.id);
+    if (container) {
+      try {
+        await container.kill();
+      } catch (err) {
+        console.warn(`[Socket] Error killing container on stop-code:`, err.message);
+      }
+      activeCodeRuns.delete(socket.id);
     }
   });
 
@@ -2273,6 +2292,13 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    // Clean up active code execution container if any
+    const container = activeCodeRuns.get(socket.id);
+    if (container) {
+      container.kill().catch(() => {});
+      activeCodeRuns.delete(socket.id);
+    }
+
     const userData = onlineUsers.get(socket.id);
     if (userData) {
       onlineUsers.delete(socket.id);
